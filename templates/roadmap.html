@@ -647,18 +647,22 @@ function renderFunding(f){
           <div class="kv"><span><b>Total</b></span><span>${fmtR(n.total)}</span></div>
           <div class="kv"><span><b>Isme CASH chahiye</b></span><span class="${fits?'pos':'neg'}">${fmtR(n.cash)}</span></div>
           <div class="kv"><span>Collateral se chal jayega</span><span>${fmtR(n.collateral_ok)}</span></div>
+          ${v.already_live_margin?`<div class="kv"><span>Isme se ABHI live hai</span>
+            <span class="pos">−${fmtR(v.already_live_margin)}</span></div>
+          <div class="kv"><span><b>Naya lagana padega</b></span>
+            <span class="${v.fits_incremental?'pos':'neg'}">${fmtR(v.incremental_total)}</span></div>`:''}
         </div>
       </div>
       <div class="verdict ${fits?'fund-ok':'fund-bad'}" style="margin-top:14px;padding:13px 16px;
            border-radius:0 9px 9px 0;font-size:.86rem;color:var(--muted);line-height:1.6">
-        ${fits ? `<b style="color:var(--ink)">✅ Fit hai.</b> Cash chahiye ${fmtR(n.cash)}, hai ${fmtR(h.cash_equiv)}.`
+        ${fits ? `<b style="color:var(--ink)">✅ Fit hai.</b> Cash chahiye ${fmtR(n.cash)}, hai ${fmtR(h.cash_equiv)}.${v.already_live_margin?`<br><span style="color:var(--muted)">Isme ${fmtR(v.already_live_margin)} already live positions me laga hua hai — naya sirf ${fmtR(v.incremental_total)} lagega.</span>`:''}`
         : `<b style="color:var(--ink)">⚠ Plan abhi ke funds me fit nahi.</b>
            Cash chahiye <b style="color:var(--ink)">${fmtR(n.cash)}</b>, hai <b style="color:var(--ink)">${fmtR(h.cash_equiv)}</b>
            → <b class="neg">${fmtR(v.cash_gap)} kam</b>${v.capacity_gap_replace?` · capacity se ${fmtR(v.capacity_gap_replace)} upar`:''}.<br><br>
            <b style="color:var(--ink)">Ilaaj cash hai, pledge nahi</b> — har ₹1 cash writing-capacity ₹2 badhata hai,
            to <b style="color:var(--ink)">${fmtR(fx.add_cash)}</b> daalte hi fit ho jayega.
            ${h.pledged_equity? `Aur pledge karne se ye gap NAHI bharta — aapka ${fmtR(h.pledged_equity)} pledged equity
-           pehle se bekaar pada hai; binding limit total collateral nahi, <b style="color:var(--ink)">2 × cash-equivalent</b> hai.`:''}`}
+           pehle se bekaar pada hai; binding limit total collateral nahi, <b style="color:var(--ink)">2 × cash-equivalent</b> hai.`:''}${v.already_live_margin?`<br><br><b style="color:var(--ink)">Par abhi jo live hai wo ginti me hai:</b> ${fmtR(v.already_live_margin)} pehle se broker pe laga hua hai, to NAYA sirf <b style="color:var(--ink)">${fmtR(v.incremental_total)}</b> lagega — ${v.fits_incremental?'<span class="pos">itna fit ho jaata hai, naya paisa daalne ki zaroorat nahi.</span>':`phir bhi <span class="neg">${fmtR(v.incremental_cash_gap)} cash kam</span> pad raha hai.`}`:''}`}
       </div>
       ${fits?'':`<div class="tw" style="margin-top:14px"><table class="t" style="min-width:560px">
         <thead><tr><th>Bina paisa daale bhi</th><th>Kya badlega</th><th>Asar</th></tr></thead>
@@ -674,7 +678,7 @@ function renderFunding(f){
         <b style="color:var(--muted)">Do alag jawab, dono sach:</b> upar ka hisaab maanta hai ki plan aapki
         <b style="color:var(--muted)">mojooda positions ki jagah</b> le raha hai. Agar plan unke <b style="color:var(--muted)">UPAR</b>
         chale to sirf bacha headroom ${fmtR(h.headroom)} kaam ka hai →
-        ${v.fits_on_top?'<span class="pos">tab bhi fit</span>':`<span class="neg">${fmtR(v.capacity_gap_on_top)} se bahar</span>`}.
+        ${v.fits_on_top?'<span class="pos">tab bhi fit</span>':`<span class="neg">${fmtR(v.capacity_gap_on_top)} se bahar</span>`}.${v.already_live_margin?`<br>Already-live ${fmtR(v.already_live_margin)} ghata ke dekhein to naya ${fmtR(v.incremental_total)} chahiye → ${v.incremental_ontop_gap>0?`<span class="neg">${fmtR(v.incremental_ontop_gap)} se bahar</span>`:'<span class="pos">headroom ke andar</span>'}.`:''}
         ${f.crypto_excluded?`<br>Crypto (Delta) ka ${fmtR(f.crypto_excluded)} is hisaab se bahar hai — wo alag khaata hai.`:''}
       </div>
     </div>
@@ -719,8 +723,14 @@ function renderGoal(){
         <div class="vsub">${g.maxdd_p95>g.dd_budget?'⚠ budget se bahar':'budget '+fmtR(g.dd_budget)+' ke andar ✓'}</div></div>
       <div><div class="clbl">Nuksan ka chance</div><div class="vnum">${p.p_loss||0}%</div><div class="vsub">net negative</div></div>
       <div><div class="clbl">Sabse bada hissa</div><div class="vnum">${g.top_share!=null?g.top_share+'%':'—'}</div>
-        <div class="vsub">${g.max_share?('cap '+g.max_share+'%'+(g.cap_relaxed?' ⚠ tod ke':'')):'koi cap nahi'}</div></div>
+        <div class="vsub">${g.max_share?('cap '+g.max_share+'%'):'koi cap nahi'}</div></div>
     </div>
+    ${g.stop_note?`<div style="margin-top:12px;padding:10px 13px;border-left:3px solid var(--border);
+        background:var(--surface-2);border-radius:0 8px 8px 0;font-size:.82rem;color:var(--muted);line-height:1.6">
+        <b style="color:var(--ink)">Yahan kyun ruka:</b> ${esc(g.stop_note)}</div>`:''}
+    ${g.cap_note?`<div style="margin-top:9px;padding:10px 13px;border-left:3px solid var(--gold);
+        background:var(--gold-bg);border-radius:0 8px 8px 0;font-size:.82rem;color:var(--muted);line-height:1.6">
+        <b style="color:var(--gold)">⚠ Cap poora nahi lag paya.</b> ${esc(g.cap_note)}</div>`:''}
   </div>
 
   <div class="tw" style="margin-top:15px"><table class="t">

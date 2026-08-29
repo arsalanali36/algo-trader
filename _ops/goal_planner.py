@@ -276,9 +276,38 @@ def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
         verdict = (f"Capacity cap tak pahunch gaye — {p_hit:.0f}% chance se aage "
                    f"in strategies pe nahi ja sakte.")
 
+    # Kyun ruka — ye page pe dikhta hai, warna "Max kiya phir bhi 2 lot" confusing hai
+    if total_lots == 0:
+        stop_note = "Ek bhi lot fit nahi hua — DD budget bahut chhota hai."
+    elif stop == "goal-reached":
+        stop_note = (f"{total_lots} lots pe RUK gaya kyunki goal-hit chance "
+                     f"{p_hit:.0f}% (target {p_goal:.0f}%) mil gaya. Weights sirf ye "
+                     f"decide karte hain ki chadhte waqt KAUN chuna jaye — kitne lot "
+                     f"lagenge wo target/DD-budget decide karta hai. Zyada lots chahiye "
+                     f"to target badhaiye ya Aggressive scenario chuniye.")
+    elif stop == "dd-budget-full":
+        stop_note = (f"{total_lots} lots pe ruka — DD budget ₹{budget:,.0f} bhar gaya "
+                     f"(is basket ka 1-in-20 drawdown ₹{cur_risk:,.0f}).")
+    elif stop == "capacity-cap":
+        stop_note = f"{total_lots} lots pe ruka — strategies ki capacity limit aa gayi."
+    else:
+        stop_note = f"{total_lots} lots."
+
+    # Cap honor hua ya nahi — cap_relaxed = itni alag strategies hain hi nahi
+    cap_note = None
+    # Sirf tab bolo jab cap SACH ME toota ho (final top > cap). `cap_relaxed`
+    # beech me ek baar bhi break hone pe set ho jaata hai, par basket aage chal
+    # ke apne aap cap ke andar aa sakta hai — us case me shor machana galat hai.
+    if cap_share and cap_relaxed and top > cap_share + 0.005:
+        cap_note = (f"Cap {100*cap_share:.0f}% is basket me possible NAHI — itni alag-alag "
+                    f"strategies hain hi nahi. Sabse bada hissa {100*top:.0f}% tak hi aa paya. "
+                    f"Cap thoda dheela karo, ya aur strategies basket me laao (Off wali on karo).")
+
     return {
         "ok": True,
         "feasible": feasible,
+        "stop_note": stop_note,
+        "cap_note": cap_note,
         "p_hit": round(p_hit, 1),
         "p_goal": p_goal,
         "verdict": verdict,
@@ -662,6 +691,44 @@ def funding_check(plan, broker_name=None):
     cash_needed = 0.5 * margin_rs + premium_rs
     total_needed = margin_rs + premium_rs
 
+    # ── Jo positions ABHI khuli hain wo already funded hain ──────────────────
+    # User: "meri position already live hai, usko factor me le." Plan ka poora
+    # total maangna galat hai — us capital ka ek hissa broker pe pehle se laga
+    # hua hai. Isliye INCREMENTAL = plan − (in strategies ki abhi khuli legs).
+    # Margin `risk_gate.position_margin` se (canonical gate, ADR-015) — apna
+    # koi margin math NAHI (Rule 6B / MARGIN-GATE).
+    live_margin = 0.0
+    live_rows = []
+    try:
+        import risk_gate as _rg
+        cks = {str(m.get("config_key") or "").lower()
+               for m in (plan.get("members") or []) if int(m.get("lots") or 0) > 0}
+        cks.discard("")
+        if cks and order_store is not None:
+            today = ist_now().date()
+            frm = (today - dt.timedelta(days=400)).isoformat()
+            rng = order_store.trades_for_range(frm, today.isoformat()) or {}
+            by_strat = {}
+            for o in (rng.get("open") or []):
+                sid = str(o.get("strategy") or "").lower()
+                if sid in cks and str(o.get("mode") or "").lower() == "live":
+                    by_strat.setdefault(sid, []).append(o)
+            for sid, legs in by_strat.items():
+                try:
+                    m = float(_rg.position_margin(legs) or 0)
+                except Exception:
+                    m = 0.0
+                if m > 0:
+                    live_margin += m
+                    live_rows.append({"strategy": sid, "legs": len(legs),
+                                      "margin": round(m)})
+    except Exception as e:
+        print("[funding] live-position scan skip:", e, flush=True)
+
+    # Incremental = sirf jo NAYA lagana padega (already-live ko ghata ke)
+    inc_total = max(0.0, total_needed - live_margin)
+    inc_cash = max(0.0, cash_needed - 0.5 * live_margin)
+
     ch = rg.cash_headroom(broker_name)
     if not ch.get("ok"):
         return {"ok": False, "reason": "broker funds abhi nahi mile — funding check skip",
@@ -721,6 +788,10 @@ def funding_check(plan, broker_name=None):
                         "from_lots": int(top["lots"]), "per_lot": round(per_lot),
                         "frees_margin": round(min(n, int(top["lots"])) * per_lot)}
 
+    # on-top ka honest hisaab = sirf INCREMENTAL vs bacha headroom
+    inc_cash_gap = max(0.0, inc_cash - max(0.0, cash_equiv - 0.5 * live_margin))
+    inc_ontop_gap = max(0.0, inc_total - headroom)
+
     fits_replace = (cash_gap <= 0) and (total_needed <= capacity)
     return {
         "ok": True,
@@ -736,7 +807,15 @@ def funding_check(plan, broker_name=None):
             "fits_on_top": (total_needed <= headroom) and (cash_gap <= 0),
             "cash_gap": round(cash_gap), "capacity_gap_replace": round(replace_gap),
             "capacity_gap_on_top": round(ontop_gap),
+            # incremental = already-live ko ghata ke (asli "aur kitna chahiye")
+            "already_live_margin": round(live_margin),
+            "incremental_total": round(inc_total),
+            "incremental_cash": round(inc_cash),
+            "incremental_cash_gap": round(inc_cash_gap),
+            "incremental_ontop_gap": round(inc_ontop_gap),
+            "fits_incremental": (inc_cash_gap <= 0) and (inc_total <= headroom),
         },
+        "live_rows": live_rows,
         "fix": {
             "add_cash": add_cash,
             # ye line jaan-boojh ke hai: aur pledge karne se ye gap NAHI bharta, kyunki
