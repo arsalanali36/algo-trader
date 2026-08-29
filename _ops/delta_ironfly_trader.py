@@ -3,7 +3,20 @@ delta_ironfly_trader.py — Delta Exchange India daily BTC Iron-Fly (PAPER, forw
 
 Phase-3 Step-2. Validated in Phase-2: SELL ATM CE+PE + BUY ~2000-pt wings (defined
 risk), enter ~12h before the 12:00 UTC daily expiry (00:00 UTC / 05:30 IST), hold to
-CASH-SETTLEMENT at 12:00 UTC. Significant + slippage-proof on 127 expiries.
+CASH-SETTLEMENT at 12:00 UTC.
+
+!! BACKTEST CAVEAT (2026-08-29, LESSONS TRAP #190) -- the code in THIS file is correct;
+   the study that justified it was not. backtest_delta.py's build(ref_h=6) picked the ATM
+   strike from spot 6h AFTER entry (entry 05:30 IST, strike from 11:30 IST) = lookahead.
+   That one line was the entire edge: same script, fixed, deployed H=12 goes
+   +344.3/trade Sharpe 9.81 -> -54.7/trade Sharpe -1.31 (500d); every entry time turns
+   negative. Corrected full audit: -152.6/trade, Sharpe -4.50, p=1.000. A direct VRP
+   measurement finds no vol premium on BTC at all (weekly -100, daily -10 on the true
+   200-pt strike grid). The earlier "significant + slippage-proof on 127 expiries" claim
+   is WITHDRAWN -- slippage-robustness was a symptom of the bias, not evidence.
+   Kept running by user decision; short-run profit at ~55% win rate is not evidence.
+   Do NOT size up or move to real money on those stats.
+   Detail: scratch/delta_weekly_fly/README.md
 
 24/7 market -> this does NOT go through execute_signal (which blocks weekends / uses
 Dhan-Kite lots). Standalone, isolated, PAPER HARD-LOCK (no real order path at all here).

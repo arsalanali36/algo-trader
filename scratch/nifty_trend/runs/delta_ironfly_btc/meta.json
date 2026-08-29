@@ -28,5 +28,6 @@
   "date": "2026-08-24"
  },
  "train_sharpe": 4.92,
- "oos_sharpe": 6.96
+ "oos_sharpe": 6.96,
+ "note": "STATS BELOW ARE FROM A LOOKAHEAD-BIASED BACKTEST (LESSONS TRAP #190). ATM strike was chosen from spot 6h after entry. Honest re-run of the same script: Sharpe -1.31; full corrected audit: -152.6/trade, Sharpe -4.50, p=1.000. Numbers left unchanged by user decision; treat sharpe/p_value/significant here as NOT trustworthy. See scratch/delta_weekly_fly/README.md"
 }
