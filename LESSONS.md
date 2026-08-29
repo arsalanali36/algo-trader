@@ -4905,3 +4905,42 @@ accordingly.
 **Lesson.** Detection and delivery are two different systems. Counting detectors tells
 you nothing about whether anyone will find out. For any alarm, trace it all the way to
 the human — and verify by **actually sending it**, not by reading the code.
+
+---
+
+## TRAP #193 — `SuccessExitStatus=0 1` made a CRASHED guard report "Finished successfully" (2026-08-30, token auto-refresh deploy)
+
+**Symptom.** First deploy of `algo-token.service` crashed on every run
+(`ModuleNotFoundError: No module named '_paths'` — a script in `_ops/` run
+directly has `sys.path[0] = _ops/`, not the project root). systemd's own verdict:
+
+    Finished algo-token.service - CODE3B token auto-refresh.
+
+**Root.** The unit had `SuccessExitStatus=0 1` — copied from `algo-healthcheck`,
+where exit-1 legitimately means "checks ran, something is RED". But **a Python
+crash also exits 1**. Folding both into "success" means a guard that never ran
+at all looks identical to a guard that ran and found nothing. `systemctl status`,
+the timer's LAST column, and any future "is my alerting alive?" check would all
+have said fine.
+
+This is the TRAP #120 / #192 shape again — a scheduled thing that fails in
+silence — except here the *monitoring of the monitor* was what lied.
+
+**Fix.** Split the two meanings by exit code:
+- `0` = all good
+- `3` = ran fine, needs a human (Kite token dead — the alert already went out)
+- `1` = crash → **stays a systemd failure**
+
+Unit is now `SuccessExitStatus=0 3`.
+
+**Guards.**
+- Any `Type=oneshot` unit whose script can *both* crash and legitimately report
+  "attention needed" must use a non-1 exit code for the second case. Never widen
+  `SuccessExitStatus` to include 1.
+- Deploying a scheduled guard is not done when the unit installs — run it once
+  and read the actual output. Here the crash was visible in `journalctl` while
+  systemd's summary line said the opposite.
+
+**Companion (same deploy).** `_ops/` scripts that run directly need the root on
+`sys.path` *before* `import _paths` — the pattern is already in CLAUDE.md and in
+`_ops/eod_report.py`; I skipped it and the timer was dead on arrival.
