@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-08-29 — ⚖️ Goal Planner: per-strategy weights + concentration cap + funding check (cash vs collateral)
+**Status:** DONE + VPS-LIVE (`258f3bd`; audit 0 FAIL; positions 78→78, diff empty)
+**Layer:** ui + display-engine (koi order/risk path nahi — solver plan banata hai, apply ke wahi purane rails)
+**Kya:** solver ne 21 me se 18 lot ek strategy ko diye the (expected ka 77%). Ab (a) har strategy pe **Off/Kam/Normal/Zyada/Max** weight, (b) **concentration cap** = ek strategy zyada se zyada kitna EXPECTED hissa le sakti hai, (c) `funding_check()` = plan vs asli broker funds (Zerodha cash-margin rule).
+**Naapa (banaya nahi) — ye pehle kiya, phir slider bana:** top-share 77%→53% karne pe expected ₹64,159→₹63,770 (~same), goal-hit 60.5%→**61.0%** (ulta behtar), capital ₹13.1L→**₹11.0L** — **keemat sirf drawdown me** (₹40,955→₹46,582). Yaani trade-off "return vs diversification" NAHI, **"drawdown vs ek-edge-pe-bharosa"** hai. Aur 04.03.02 ko "Zyada" karne pe expected **+₹67,893** / goal-hit **63.3%** — usko kam allocation milna sach me chhoot raha tha.
+**Cap EXPECTED-share pe hai, CAPITAL pe nahi — jaan-boojh ke.** Capital-share pe cap laga ke test kiya: 04.03.02 ₹5,385/lot vs 02.10.01 ₹63,623/lot → pehla lot hamesha 100% share, koi doosra add ho hi nahi sakta → solver **1 lot pe deadlock** (measured, mockup ke table me likha). Aur asli sawaal bhi yahi hai: kitna paisa EK edge ke sach hone pe tika hai, margin kitna block hua wo nahi.
+**Bootstrap + soft-fallback:** cap tabhi binding jab basket `ceil(1/cap)` lots se bada ho (warna pehla lot hi cap tod deta). Cap ke andar kuch add na ho paye to **cap tod ke aage badhta hai AUR `cap_relaxed` flag deta** — chupchaap bekaar 1-lot plan nahi.
+**Funding (Zerodha rule, `risk_gate.cash_headroom` reuse):** short/margin legs ko margin ka **≥50% CASH**, option BUY ko **100% cash** → `cash = 0.5×margin + premium`, `total ≤ 2×cash-equiv`. Live: plan ₹9,81,949 (margin ₹9,65,794 + premium ₹16,155) → cash chahiye ₹4,99,052 vs ₹4,63,390 = **₹35,662 kam**, capacity se ₹55,170 upar. **Ilaaj cash hai, pledge nahi** — ₹6,17,988 pledged equity bekaar pada hai kyunki binding limit `2 × cash-equivalent` hai (yehi TRAP #179). Teen raaste diye: cash daalo · sabse bade per-lot member ke N lot kam (aisa member chuna jo lots dene ke baad ZINDA bache) · pledged equity ka hissa liquid-fund me (liquid = cash-equivalent).
+**Do aankde alag dikhte hain, dono sach:** plan mojooda positions ki JAGAH le (capacity ₹9,26,779) vs unke UPAR (headroom ₹4,63,797) — page dono batata hai.
+**Verify:** solver output mockup se bit-match (18 lots / ₹9,81,949 / +₹66,055 / top 60%); funding hand-calc se exact; browser me sliders+cap+funding card render (0 console error); audit 0 FAIL; VPS pe live funds se cash_headroom reproduce.
+
 ## 2026-08-29 — 🤖 Auto-pick basket (deploy-gate har strategy pe) + 04.03.02 Ars-chain BUY → LIVE
 **Status:** DONE + VPS-LIVE (`6917839`; audit 0 FAIL; positions 78→78 unchanged, A-vs-B diff empty)
 **Layer:** ui + config (config write = sirf chainzone_v1 ka `mode`)
