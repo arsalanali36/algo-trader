@@ -726,17 +726,36 @@ def _net_rows(rows):
             # same-strategy match, else fall back to a manual cross-close. Scan the
             # whole stack (not just st[0]) so a same-strategy pair still nets even
             # when a foreign leg happens to sit in front of it.
-            same_idx = manual_idx = None
+            # A leg already marked externally_closed is a GHOST: the broker went
+            # flat on it and no exit price was ever found (that is what the status
+            # means, TRAP #61). It must never STEAL a real exit from a genuinely
+            # open leg of the same strategy+contract — which is exactly what the
+            # plain oldest-first scan did: an 18-Aug externally_closed BANKNIFTY
+            # short swallowed the 25-Aug broker-mirror close that belonged to the
+            # 25-Aug short, inventing a +Rs10,257 cross-day "trade" AND leaving
+            # the real 25-Aug leg open forever (user-reported 2026-08-29).
+            # So: prefer a LIVE same-strategy leg; keep the dead one only as a
+            # FALLBACK. Deleting dead legs from netting outright was tried and
+            # REJECTED by a whole-DB A/B — they also absorb exits that would
+            # otherwise cascade into much older unrelated legs (30 trades lost,
+            # 17 phantom opens, -Rs31,458). Demoting them changes exactly ONE
+            # trade in the entire DB and leaves _net_rows_chrono bit-identical.
+            same_idx = same_dead_idx = manual_idx = None
             for i, (e, _er) in enumerate(st):
                 if e["side"] == r["side"] or not _sec_ok(e, r):
                     continue
                 if e["strategy"] == r["strategy"]:
-                    same_idx = i
-                    break
+                    if str(e.get("status") or "").lower() != "externally_closed":
+                        same_idx = i
+                        break
+                    if same_dead_idx is None:
+                        same_dead_idx = i
+                    continue
                 if manual_idx is None and (e["source"] in _MANUAL_CLOSERS
                                            or r["source"] in _MANUAL_CLOSERS):
                     manual_idx = i
-            idx = same_idx if same_idx is not None else manual_idx
+            idx = same_idx if same_idx is not None else (
+                  same_dead_idx if same_dead_idx is not None else manual_idx)
             if idx is None:
                 break
             e, erem = st[idx]
