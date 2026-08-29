@@ -344,6 +344,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;heigh
             </div>
           </div>
         </div>
+        <div id="appliedBox"></div>
+        <div id="gPrefNote" style="font-size:.8rem;margin:0 0 10px"></div>
         <div id="goalBox"><p class="load">Target aur date bhar ke “Basket banao” dabaiye.</p></div>
         <div id="fundBox"></div>
       </div>
@@ -599,8 +601,9 @@ const WLBL = [['0','Off'],['0.5','Kam'],['1','Normal'],['2','Zyada'],['3','Max']
 function capChanged(v){
   const n = +v; GCAP = n >= 100 ? null : n/100;
   document.getElementById('gCapVal').textContent = GCAP ? n+'%' : 'koi cap nahi';
+  saveGoalPrefs();
 }
-function setW(id, w){ GW[id] = +w; renderWeightRows(GOAL); solveGoal(); }
+function setW(id, w){ GW[id] = +w; saveGoalPrefs(); renderWeightRows(GOAL); solveGoal(); }
 function renderWeightRows(g){
   const box = document.getElementById('wRows'); if(!box || !g) return;
   box.innerHTML = (g.members||[]).map(m=>{
@@ -701,6 +704,7 @@ async function solveGoal(){
     const r = await fetch('/api/roadmap/goal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j = await r.json();
     if(!j.ok) throw new Error(j.error||'fail');
+    saveGoalPrefs();
     SCEN = j.scenarios; if(!SCEN[CURSCEN]) CURSCEN='balanced'; GOAL = SCEN[CURSCEN];
     renderGoal(); renderWeightRows(GOAL); loadFunding();
   }catch(e){ document.getElementById('goalBox').innerHTML = `<div class="err">Solve fail: ${esc(e.message||e)}</div>`; }
@@ -930,6 +934,69 @@ async function doApply(paperOnly){
   }catch(e){ res.innerHTML = `<div class="err" style="margin-top:12px">${esc(e.message||e)}</div>`; }
 }
 
+/* ── Goal Planner ki settings refresh ke baad bhi rahen ──────────────────────
+   Pehle har reload pe target/date/DD/scope/cap/weights sab khaali ho jaate the
+   aur laagu plan sirf ek chhoti chip me dikhta tha — user ko dobara sab chunna
+   padta tha. Ab: settings localStorage me (turant, per-change), aur SERVER pe
+   store hua applied-plan (jo ab apni settings bhi rakhta hai) authoritative
+   fallback — dusre device/browser pe bhi wahi plan wapas bhar jaata hai.      */
+const GPREF = 'roadmap_goal_prefs';
+
+function saveGoalPrefs(){
+  try{
+    localStorage.setItem(GPREF, JSON.stringify({
+      target: document.getElementById('gTarget').value,
+      date:   document.getElementById('gDate').value,
+      dd:     document.getElementById('gDD').value,
+      scope:  document.getElementById('gScope').value,
+      cap:    document.getElementById('gCap').value,
+      weights: GW, scen: CURSCEN
+    }));
+  }catch(e){}
+}
+
+function applyGoalPrefs(p, src){
+  if(!p) return false;
+  const set = (id, v)=>{ if(v!==undefined && v!==null && v!=='') document.getElementById(id).value = v; };
+  set('gTarget', p.target); set('gDate', p.date || p.to_date);
+  set('gDD', p.dd != null ? p.dd : p.dd_budget); set('gScope', p.scope);
+  const cap = (p.cap != null) ? p.cap : (p.max_share != null ? p.max_share : 100);
+  document.getElementById('gCap').value = cap; capChanged(cap);
+  GW = p.weights || {};
+  if(p.scen) CURSCEN = p.scen;
+  const n = document.getElementById('gPrefNote');
+  if(n) n.innerHTML = `<span style="color:var(--muted)">${esc(src)} — “Basket banao” dabaiye
+    to inhi settings pe dobara solve hoga.</span>`;
+  return true;
+}
+
+/* server ka laagu plan poora dikhao (chip ke alawa), taaki refresh pe pata rahe
+   ki system pe abhi KYA laagu hai — bina dobara solve kiye. */
+function renderAppliedPlan(P){
+  const box = document.getElementById('appliedBox');
+  if(!box) return;
+  if(!P){ box.innerHTML=''; return; }
+  const lots = P.lots || {}, labels = P.labels || {}, cur = P.cur_lots || {};
+  const ids = Object.keys(lots).filter(k=>lots[k]>0);
+  const total = ids.reduce((a,k)=>a+lots[k],0);
+  const q = (P.queued||[]).length, sk = (P.skipped||[]).length;
+  box.innerHTML = `
+  <div class="card" style="border-color:var(--up-soft)">
+    <header><h3>✅ Abhi system pe laagu plan</h3><div class="sp"></div>
+      <span class="clbl">${esc(P.name||'custom')} · ${total} lots · ${fmtR(P.capital||0)} · ${esc(P.applied_at||'')}</span></header>
+    <div class="body">
+      <div class="tw"><table class="t"><thead><tr><th>Strategy</th><th>Lots</th><th>Pehle</th></tr></thead>
+        <tbody>${ids.map(id=>`<tr><td>${esc(id)} ${esc(labels[id]||'')}</td>
+          <td><b>${lots[id]}</b></td><td class="mut">${cur[id]!=null?cur[id]:'—'}</td></tr>`).join('')}</tbody></table></div>
+      <div style="margin-top:10px;font-size:.82rem;color:var(--muted)">
+        Target ${fmtR(P.target||0)} · ${esc(P.to_date||'')} · DD budget ${fmtR(P.dd_budget||0)}
+        ${P.max_share?` · cap ${P.max_share}%`:''}${q?` · ${q} queued (khuli position)`:''}${sk?` · ${sk} skip`:''}
+        ${P.stop_note?`<br><span style="color:var(--faint)">${esc(P.stop_note)}</span>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
 async function loadPlan(doRollback){
   if(doRollback){
     if(!confirm('Pichla config wapas laayein? (lots/capital plan se pehle jaise ho jayenge)')) return;
@@ -945,6 +1012,14 @@ async function loadPlan(doRollback){
       chip.className='planchip';
       chip.textContent = `● ${PLAN.name} · ${Object.values(PLAN.lots||{}).reduce((a,b)=>a+b,0)} lots · ${fmtR(PLAN.capital||0)}`;
     }else{ chip.className='planchip none'; chip.textContent='koi active plan nahi'; }
+    renderAppliedPlan(PLAN);
+    // settings wapas: pehle is browser ki, warna server ke laagu plan ki
+    let done = false;
+    try{
+      const raw = localStorage.getItem(GPREF);
+      if(raw) done = applyGoalPrefs(JSON.parse(raw), 'Pichli baar ki settings wapas bhar di');
+    }catch(e){}
+    if(!done && PLAN) applyGoalPrefs(PLAN, 'Laagu plan ki settings wapas bhar di');
   }catch(e){}
 }
 

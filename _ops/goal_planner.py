@@ -587,7 +587,14 @@ def apply_plan(plan, confirm=None, paper_only=False, note=""):
         "name": plan.get("name") or plan.get("scenario") or "custom",
         "target": plan.get("target"), "to_date": plan.get("to_date"),
         "dd_budget": plan.get("dd_budget"),
+        # jo settings se ye plan bana — refresh ke baad page inhe wapas bhar sake
+        # (warna user ko target/date/cap/weights sab dobara chunna padta hai)
+        "scope": plan.get("scope"), "max_share": plan.get("max_share"),
+        "weights": plan.get("weights"), "p_hit": plan.get("p_hit"),
+        "p_goal": plan.get("p_goal"), "stop_note": plan.get("stop_note"),
         "lots": {m["id"]: int(m.get("lots") or 0) for m in (plan.get("members") or [])},
+        "labels": {m["id"]: m.get("label") for m in (plan.get("members") or [])},
+        "cur_lots": {m["id"]: int(m.get("cur_lots") or 0) for m in (plan.get("members") or [])},
         "config_keys": {m["id"]: m.get("config_key") for m in (plan.get("members") or [])},
         "projection": plan.get("projection"),
         "capital": plan.get("capital"),
