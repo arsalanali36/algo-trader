@@ -4750,6 +4750,22 @@ produced all three symptoms:
 |---|---|
 | Carried position invisible | `/api/orders` carries prior-day legs over ONLY for `risk_gate.allow_overnight(strategy)` strategies. **`manual` is False** → every hand-carried overnight NRML position vanishes at the day rollover. |
 | Dead leg immortal | `_net_rows` FIFO-paired the 25-Aug broker-mirror close against an OLDER **`externally_closed`** ghost row on the same contract → the real short stayed "open" forever + a phantom +₹10,257 on 25-Aug. |
+**CONFIRMED from Zerodha's own P&L statement** (user-downloaded xlsx, row
+`NIFTY2690124550CE`, range 01→29 Aug): Quantity **260**, Buy Value **₹8,089.25**, Sell Value
+₹2,899.00, **Realised −₹5,190.25**, Open Quantity **130 buy @ Open Value ₹1,358.50**.
+
+The Buy Value is the proof: the user bought only 260 × ₹10.45 = ₹2,717 that day, yet the buy
+side is ₹8,089.25 = `130×51.775 (the iron-fly's 26-Aug lot) + 130×10.45` — Zerodha paired the
+straddle's sell against ANOTHER strategy's older, more expensive lot.
+
+**Bonus, and a trap in itself: Zerodha's own two screens disagree.** Kite's *Positions* page
+showed the surviving 130 at avg **51.77**; the official statement (and the Kite *API*) say
+**10.45** (Open Value 1,358.50 ÷ 130). The user was reading 51.77 and comparing it against a
+Console total that had already FIFO'd the lot away — which is exactly why the ₹5,281 was
+invisible to him on every screen he looked at. **When a broker's screens disagree, the P&L
+STATEMENT is the authority, not the positions view** — our app reads the API/statement value,
+so it was right and the screen was the odd one out.
+
 | The −₹9,347 | `leg_collision.occupied_sec_ids()` is day-scoped → on 28-Aug it could not see the iron-fly's 24550-CE wing bought on **26-Aug** → `straddle_alert_hedged` bought the SAME contract → Zerodha's per-contract FIFO consumed the iron-fly's older lot, booking its **−₹5,281 two days early**. |
 
 The page was wrong in **both directions at once** — hiding a real leg while showing a dead one.
