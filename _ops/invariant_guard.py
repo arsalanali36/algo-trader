@@ -65,18 +65,21 @@ def _app_live_net(date):
     paper, CAPITAL_BLOCKED, and non-kite legs. This is 'what the app believes it
     holds live'."""
     import order_store
+    # EVERY live leg still net-open across a 90-day window — NOT just the
+    # allow_overnight ones. The old build was day-scoped + allow-listed, so a
+    # position the USER carried by hand (strategy 'manual', allow_overnight=False)
+    # was missing from "what the app holds" and this invariant screamed RED at it
+    # every single cycle — a permanent false alarm on a perfectly fine position.
+    # That is how the alarm became wallpaper: it fired daily, so nobody could tell
+    # the day it fired for a REAL reason (TRAP #191 — the alarm DID catch the bug,
+    # it just could not be heard). The app genuinely knows these legs; only this
+    # function was filtering them out.
+    rows = []
+    lb = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30) - timedelta(days=90)).strftime("%Y-%m-%d")
     try:
-        import risk_gate
+        rows = list(order_store.trades_for_range(lb, date).get("open", []) or [])
     except Exception:
-        risk_gate = None
-    rows = list(order_store.trades_for(date).get("open", []) or [])
-    lb = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30) - timedelta(days=7)).strftime("%Y-%m-%d")
-    try:
-        for r in order_store.trades_for_range(lb, date).get("open", []) or []:
-            if risk_gate and risk_gate.allow_overnight(r.get("strategy")):
-                rows.append(r)      # positional legs entered on a prior day
-    except Exception:
-        pass
+        rows = list(order_store.trades_for(date).get("open", []) or [])   # degraded, never empty-clear
     net, seen = {}, set()
     for p in rows:
         rid = p.get("id")
@@ -92,6 +95,17 @@ def _app_live_net(date):
         s = p.get("sym") or ""
         if not s:
             continue
+        # An EXPIRED contract cannot be an open broker position, so comparing it
+        # against the broker is meaningless — it would only ever produce a RED
+        # nobody can act on (stale rows from months ago). Unknown/expired -> skip.
+        # A contract with a live expiry is compared normally.
+        try:
+            import dhan_master as _dm
+            _exp = _dm.get_expiry_for_sec_id(str(p.get("sec_id") or ""))
+            if not _exp or str(_exp) < date:
+                continue
+        except Exception:
+            pass          # scrip master unreadable -> compare anyway (never silently drop)
         q = int(p.get("qty") or 0)
         net[s] = net.get(s, 0) + (q if p.get("entry") == "BUY" else -q)
     return {k: v for k, v in net.items() if v != 0}
@@ -264,6 +278,32 @@ def _save_fired_keys(keys):
         pass
 
 
+
+def _status_path():
+    from pathlib import Path
+    return Path(__file__).resolve().parent.parent / "data" / "invariant_status.json"
+
+
+def _write_status(date, violations):
+    """Persist the LAST verdict so the dashboard can show it without re-hitting
+    the broker. The pill reads this file only — a page render must never cost a
+    positions call (and must never be able to slow the trading loop down)."""
+    try:
+        reds = [x for x in violations if x.severity == "RED"]
+        unk = [x for x in violations if x.severity == "UNKNOWN"]
+        p = _status_path()
+        p.parent.mkdir(exist_ok=True)
+        p.write_text(json.dumps({
+            "ts": (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M:%S"),
+            "date": date,
+            "ok": not reds and not unk,
+            "red": len(reds),
+            "unknown": len(unk),
+            "items": [x.detail for x in (reds + unk)][:20],
+        }, indent=1))
+    except Exception:
+        pass
+
 def run(date=None, alert=False, log=print):
     """Check + (optionally) fire loud alerts. Returns the violation list.
     Read-only. Call every ~120s from pos_monitor_loop (alert=True).
@@ -272,6 +312,7 @@ def run(date=None, alert=False, log=print):
     bell resolved ('✓ fixed'), so a stale red badge never lingers (a stale alert
     erodes trust as much as a missing one — notify.py's own lesson)."""
     v = check_all(date)
+    _write_status(date or _ist_today(), v)
     if alert:
         try:
             import notify
@@ -285,6 +326,32 @@ def run(date=None, alert=False, log=print):
                     notify.resolve(stale)
                 except Exception:
                     pass
+            # ── Telegram push: reach the user WITHOUT him opening the dashboard ──
+            # The dashboard bell alone is not enough — it had 99+ unread when this
+            # guard's own RED sat in it unnoticed for days (TRAP #191). Only NEW
+            # REDs are pushed (`cur - previously_fired`), and a "back to normal"
+            # is pushed once when the last RED clears, so the phone never becomes
+            # the next thing that cries wolf.
+            _prev = _load_fired_keys()
+            _new_reds = [x for x in v if x.severity == "RED" and x.key not in _prev]
+            _cleared = bool(_prev) and not cur
+            if _new_reds or _cleared:
+                try:
+                    import telegram_notify as _tg
+                    if _tg.is_enabled():
+                        _NL = chr(10)
+                        if _new_reds:
+                            _body = _NL.join("- " + x.detail for x in _new_reds[:8])
+                            _more = (_NL + "... +%d aur" % (len(_new_reds) - 8)) if len(_new_reds) > 8 else ""
+                            _tg._dispatch(
+                                "APP vs ZERODHA MISMATCH (%d)" % len(_new_reds) + _NL
+                                + _body + _more + _NL + _NL
+                                + "App aur broker alag hain - check karo.")
+                        else:
+                            _tg._dispatch("App aur Zerodha ab match karte hain "
+                                          "- mismatch clear ho gaya.")
+                except Exception as _te:
+                    log("[invariant_guard] telegram push failed: %s" % _te, flush=True)
             _save_fired_keys(cur)
         except Exception as e:
             log(f"[invariant_guard] alert failed: {e}", flush=True)

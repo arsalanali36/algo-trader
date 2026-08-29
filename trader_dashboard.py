@@ -9933,6 +9933,51 @@ def api_orders_calendar_summary():
     })
 
 
+
+@app.route('/api/health/app-vs-broker')
+def api_health_app_vs_broker():
+    """Does the app's picture of open positions match Zerodha's? ONE line, always
+    visible in the header (static/js/health-pill.js).
+
+    WHY (TRAP #191): invariant_guard ALREADY caught the 2026-08-29 mismatch — its
+    RED sat unread in a bell showing "99+" while the user was told, on screen, a
+    position he was really carrying did not exist. A guard nobody can hear is not
+    a guard. So its verdict gets one unmissable pill instead.
+
+    Reads ONLY the status file the guard writes each cycle (~120s from
+    pos_monitor_loop) — a page render must never cost a broker call. A verdict
+    older than 20 min reports `stale`, never a false green: "we have not checked
+    recently" and "everything is fine" must never look the same."""
+    import json as _json
+    from pathlib import Path as _P
+    out = {"state": "unknown", "red": 0, "items": [], "ts": None}
+    try:
+        f = _P(BASE_DIR) / "data" / "invariant_status.json"
+        if not f.exists():
+            return jsonify(out)
+        d = _json.loads(f.read_text() or "{}")
+        out["ts"] = d.get("ts")
+        out["red"] = int(d.get("red") or 0) + int(d.get("unknown") or 0)
+        out["items"] = d.get("items") or []
+        age_min = None
+        try:
+            t = datetime.strptime(str(d.get("ts")), "%Y-%m-%d %H:%M:%S")
+            now = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
+            age_min = (now - t).total_seconds() / 60.0
+        except Exception:
+            pass
+        if age_min is not None and age_min > 20:
+            out["state"] = "stale"
+            out["age_min"] = round(age_min)
+        elif out["red"]:
+            out["state"] = "mismatch"
+        else:
+            out["state"] = "ok"
+    except Exception as e:
+        out["state"] = "unknown"
+        out["err"] = str(e)
+    return jsonify(out)
+
 @app.route('/api/bs-shadow')
 def api_bs_shadow():
     """Black-Scholes shadow of the REAL trades, per day + per strategy, from the

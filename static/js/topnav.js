@@ -232,6 +232,16 @@
     scrim.addEventListener('click', close);
   }
 
+  // App-vs-Zerodha pill — one line, every page that uses this nav (index.html
+  // has its own header and loads the script directly). See health-pill.js.
+  (function () {
+    if (document.querySelector('script[src*="health-pill"]')) return;
+    var sc = document.createElement('script');
+    sc.src = '/static/js/health-pill.js';
+    sc.defer = true;
+    document.head.appendChild(sc);
+  })();
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();
