@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**153 modules documented** across 10 folders.
+**154 modules documented** across 10 folders.
 
 
 ## Folders
@@ -1415,6 +1415,13 @@ strangle_live.py — LIVE wiring for the positional hedged short-strangle + roll
 - 🔧 `fire_strangle` — Enter one hedged strangle. source: strangle_920 | strangle_manual. Returns pos|None.
 - 🔧 `strangle_loop` — ~3s: 9:20 entry (IV-gated) + roll + 50%-credit target exit + expiry squareoff.
 
+### `_ops/strategy_candidates.py`
+strategy_candidates.py — "system khud chun kar bataye kaunsi strategy basket me aani chahiye".
+
+- 🔧 `eligible_members` — Solver ke liye member-shaped list — sirf gate-paas candidates.
+- 🔧 `scan` — Har run ka candidate-card + gate verdict.
+- 🔧 `summary` — …
+
 ### `_ops/strategy_supervisor.py`
 strategy_supervisor.py — fork-based launcher for CODE3B live/paper strategies.
 
@@ -1748,6 +1755,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_rms_reconcile` — RMS Stage 3 — read-only drift check: our own capital_in_use(None) vs the
 - 🔧 `api_rms_summary` — …
 - 🔧 `api_roadmap` — …
+- 🔧 `api_roadmap_candidates` — Har Lab-run strategy pe deploy-gate → eligible / weak / rejected (read-only).
 - 🔧 `api_roadmap_daily` — …
 - 🔧 `api_roadmap_goal` — Solve only — koi write nahi.
 - 🔧 `api_roadmap_plan` — …

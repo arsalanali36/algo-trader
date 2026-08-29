@@ -57,6 +57,12 @@ def goal():
         float(b.get("dd_budget") or 0), b.get("scope", "all"))})
 
 
+@app.route("/api/roadmap/candidates")
+def cands():
+    import strategy_candidates as sc
+    return jsonify({"ok": True, "summary": sc.summary(), "candidates": sc.scan()})
+
+
 @app.route("/api/roadmap/plan")
 def plan():
     return jsonify({"ok": True, "active": gp.active_plan(), "history": []})

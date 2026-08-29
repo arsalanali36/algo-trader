@@ -1078,6 +1078,17 @@ def api_roadmap_portfolio():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route('/api/roadmap/candidates')
+def api_roadmap_candidates():
+    """Har Lab-run strategy pe deploy-gate → eligible / weak / rejected (read-only)."""
+    try:
+        import strategy_candidates as _sc
+        return jsonify({"ok": True, "summary": _sc.summary(), "candidates": _sc.scan()})
+    except Exception as e:
+        print("[roadmap-candidates] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route('/api/roadmap/goal', methods=['POST'])
 def api_roadmap_goal():
     """Solve only — koi write nahi."""

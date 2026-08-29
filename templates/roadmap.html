@@ -291,7 +291,11 @@ button:disabled{opacity:.45;cursor:not-allowed}
           <div><span class="clbl">Kab tak</span><input id="gDate" type="date"></div>
           <div><span class="clbl">Max drawdown ₹</span><input id="gDD" type="number" value="60000" step="5000"></div>
           <div><span class="clbl">Kaunsi strategies</span>
-            <select id="gScope"><option value="all">Real + Paper</option><option value="real">Sirf real-money</option></select></div>
+            <select id="gScope">
+              <option value="auto">🤖 Auto — system khud chune</option>
+              <option value="all">Sirf portfolio ki (Real + Paper)</option>
+              <option value="real">Sirf real-money</option>
+            </select></div>
           <div class="sp"></div>
           <button class="go" onclick="solveGoal()">Basket banao →</button>
         </div>
@@ -299,6 +303,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
       </div>
     </div>
     <div id="applyBox"></div>
+
+    <h2 class="sec">🤖 System ne kya chuna — aur kya chhoda, kyun</h2>
+    <div id="candBox"><p class="load">Candidates load ho rahe hain…</p></div>
   </section>
 </div>
 
@@ -317,7 +324,7 @@ function pickTab(i){
   document.querySelectorAll('.tabbar button').forEach((b,n)=>b.setAttribute('aria-selected', n===i?'true':'false'));
   document.getElementById('tab0').hidden = i!==0;
   document.getElementById('tab1').hidden = i!==1;
-  if(i===1 && !GOAL && !SCEN) solveGoal();
+  if(i===1){ if(!GOAL && !SCEN) solveGoal(); if(!window._candLoaded){ window._candLoaded=1; loadCandidates(); } }
   window.scrollTo({top:0});
 }
 function addDays(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
@@ -623,6 +630,62 @@ function renderGoal(){
   </div>`;
   document.getElementById('goalBox').innerHTML = html;
   document.getElementById('applyBox').innerHTML = '';
+}
+
+/* ══════════════ CANDIDATES (system khud chune) ══════════════ */
+async function loadCandidates(){
+  const box = document.getElementById('candBox');
+  try{
+    const r = await fetch('/api/roadmap/candidates'); const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'fail');
+    renderCandidates(j.candidates, j.summary);
+  }catch(e){ box.innerHTML = `<div class="err">Candidates fail: ${esc(e.message||e)}</div>`; }
+}
+
+function candRow(c){
+  const V = {eligible:['✅','var(--up)'], weak:['🟡','var(--gold)'], rejected:['⛔','var(--down)']}[c.verdict];
+  const st = c.status==='live' ? '<span class="pill p-real">Live</span>'
+    : c.status==='paper' ? '<span class="pill p-paper">Paper</span>'
+    : '<span class="pill" style="color:var(--faint);border-color:var(--border)">Live file nahi</span>';
+  // sabse kaam ki line: gate paas + abhi paper = "live karne layak"
+  const sugg = (c.verdict==='eligible' && c.status==='paper')
+      ? '<span class="pill p-gold">👉 live karne layak</span>'
+      : (c.verdict!=='eligible' && c.status==='live')
+      ? '<span class="pill p-bad">⚠ live hai par gate fail</span>' : '';
+  const why = c.fails.length ? c.fails.join(' · ')
+            : (c.flags.length ? c.flags.join(' · ') : 'saare gate clear');
+  return `<tr${c.verdict==='rejected'?' style="opacity:.55"':''}>
+    <td>${V[0]} <span class="sid">${esc(c.id||'—')}</span><br><span class="snm">${esc(c.label)}</span></td>
+    <td>${st} ${sugg}</td>
+    <td>${c.sharpe==null?'—':c.sharpe}</td>
+    <td>${c.p_value==null?'—':(+c.p_value).toFixed(3)}</td>
+    <td>${c.trades.toLocaleString('en-IN')}</td>
+    <td>${c.maxdd_pct==null?'—':c.maxdd_pct+'%'}</td>
+    <td>${c.in_portfolio?'✓':'—'}</td>
+    <td class="why" style="color:${c.fails.length?'var(--down)':(c.flags.length?'var(--gold)':'var(--muted)')}">${esc(why)}</td>
+  </tr>`;
+}
+
+function renderCandidates(cs, sum){
+  document.getElementById('candBox').innerHTML = `
+  <div class="card">
+    <header><h3>Deploy-gate har strategy pe</h3><div class="sp"></div>
+      <span class="clbl">${sum.eligible}/${sum.total} paas · ${sum.eligible_paper} paper (live karne layak)
+        · ${sum.eligible_unwired} ka live file nahi · ${sum.rejected} reject</span></header>
+    <div class="tw"><table class="t">
+      <thead><tr><th>Strategy</th><th>Abhi</th><th>Sharpe</th><th>p</th><th>Trades</th>
+        <th>MaxDD</th><th>Portfolio</th><th>Faisla kyun</th></tr></thead>
+      <tbody>${cs.map(candRow).join('')}</tbody>
+    </table></div>
+    <div class="body" style="padding-top:12px;color:var(--faint);font-size:.8rem">
+      <b style="color:var(--muted)">Gate:</b> Sharpe ≥ 1 (real-cost pe — DOM slip + date-aware STT ke baad)
+      · p &lt; 0.05 · train aur OOS dono positive · ≥ 100 trades.
+      <b style="color:var(--muted)">Sharpe &gt; 4 wali jaan-boojh ke bahar</b> — auto-picker risk-adjusted
+      return pe size karta hai, to jiska backtest sabse smooth (yaani sabse shaqi) hoga usi ko sabse zyada
+      lots milte; pehle verify, phir haath se add karo. <b style="color:var(--muted)">Live flip kabhi
+      automatic nahi</b> — ye sirf suggestion hai.
+    </div>
+  </div>`;
 }
 
 /* ══════════════ APPLY ══════════════ */

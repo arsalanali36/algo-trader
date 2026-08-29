@@ -68,7 +68,32 @@ MAX_STEPS = 400            # greedy safety stop
 
 # ═══════════════════════════════════════════════════════════════ SOLVER
 def _candidates(scope="all", include_ids=None):
-    """Projection-eligible members (blocked/disabled bahar)."""
+    """
+    Basket ke liye upalabdh strategies.
+
+    scope="auto" → sirf configured members nahi, balki **saari** strategies jinka Lab run
+    hai aur jo deploy-gate paas karti hain (`strategy_candidates`) — yahi "system khud
+    chun kar bataye" wala mode. Paper strategies bhi aati hain: planner unhe lots suggest
+    kar sakta hai, par live KABHI khud nahi karta (mode/active apply se bahar hain).
+    """
+    if scope == "auto":
+        try:
+            import strategy_candidates as _sc
+            out = []
+            for c in _sc.eligible_members():
+                out.append({
+                    "id": c["id"], "label": c["label"], "slug": c["slug"],
+                    "config_key": c["config_key"], "run_lots": c.get("run_lots"),
+                    "capacity_lots": int(c.get("capacity_lots") or 20),
+                    "mode": c.get("mode"), "cur_lots": int(c.get("cur_lots") or 0),
+                    "book": c.get("book") or 0,
+                })
+            if include_ids:
+                out = [c for c in out if c["id"] in include_ids]
+            return out
+        except Exception as e:
+            print("[goal_planner] auto-scope fail, falling back to members:", e, flush=True)
+
     out = []
     for m in _rp.members(include_blocked=False):
         if not m.get("enabled"):
