@@ -118,6 +118,20 @@
       </div>
       <span class="livechip" id="livechip">● GENUINE EDGE</span>
     </div>
+
+    <div id="lotStrip" style="display:none;align-items:center;gap:16px;flex-wrap:wrap;padding:9px 14px;background:var(--panel);border:1px solid var(--bd);border-radius:9px;margin-bottom:12px">
+      <span style="font-weight:700;font-size:12px">📦 Lot economics</span>
+      <span class="seg" style="align-items:center">
+        <button class="tchbtn" onclick="_lsSet(_lsN-1)" style="padding:4px 10px">−</button>
+        <input id="lotNum" type="number" min="1" value="1" onchange="_lsSet(this.value)" style="width:52px;text-align:center;background:var(--panel2);border:1px solid var(--bd);color:var(--tx);padding:4px;border-radius:6px;font-weight:700">
+        <button class="tchbtn" onclick="_lsSet(_lsN+1)" style="padding:4px 10px">+</button>
+        <span class="lbl" style="border:none;background:none">LOTS</span>
+      </span>
+      <span>Net <b id="lsNet">—</b></span>
+      <span>Tax <b id="lsTax" class="mut">—</b></span>
+      <span>Capital <b id="lsCap" style="color:var(--bench)">—</b></span>
+      <span class="mut" id="lsNote" style="font-size:11px"></span>
+    </div>
     <div class="controls">
       <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
         <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
@@ -679,6 +693,34 @@ document.addEventListener('keydown',e=>{if(!document.getElementById('tModal').cl
   }catch(err){}
 })();
 renderAll();
+// ---- Lot-economics strip: reuses /api/registry-economics (same authority as /registry2),
+// so Net/Tax/Capital scale to any lot count. Sharpe/Win%/DD are ratios (lot-independent).
+var _lsN=1;
+(function(){
+  var mm=location.pathname.match(/\/runs\/([^\/]+)\//);
+  var slug=mm?mm[1]:null;
+  var q=new URLSearchParams(location.search);
+  _lsN=Math.max(1, parseInt(q.get('lots'),10) || ((R.meta&&R.meta.lots)||1));
+  var ECON=null;
+  function draw(){
+    var s=document.getElementById('lotStrip'); if(!s)return;
+    if(!ECON){s.style.display='none';return;}
+    s.style.display='flex';
+    var el=document.getElementById('lotNum'); if(el)el.value=_lsN;
+    var gross=(ECON.gross_per_lot||0)*_lsN, tax=(ECON.flat_charge||0)+(ECON.per_lot_charge||0)*_lsN, net=gross-tax;
+    var cap=(ECON.capital_per_lot!=null)?ECON.capital_per_lot*_lsN:null;
+    var est=(ECON.capital_kind&&ECON.capital_kind.indexOf('~')>=0)?'~':'';
+    var nEl=document.getElementById('lsNet'); nEl.textContent=(net>=0?'+':'')+'₹'+inr(Math.abs(net)); nEl.className=net>=0?'pos':'neg';
+    document.getElementById('lsTax').textContent='-₹'+inr(Math.abs(tax));
+    document.getElementById('lsCap').textContent=(cap!=null)?(est+'₹'+inr(cap)):'—';
+    document.getElementById('lsNote').textContent='at '+_lsN+' lot(s) · charges recomputed (flat brokerage does not scale) · Sharpe/Win%/DD unchanged';
+  }
+  window._lsSet=function(v){_lsN=Math.max(1, parseInt(v,10)||1); draw();};
+  if(slug){ fetch('/api/registry-economics',{cache:'no-store'})
+    .then(function(r){return r.json();})
+    .then(function(j){ var e=j&&j.econ; ECON=e?(e[slug]||e[slug.toLowerCase()]||null):null; draw(); })
+    .catch(function(){}); }
+})();
 </script>
 </body>
 </html>

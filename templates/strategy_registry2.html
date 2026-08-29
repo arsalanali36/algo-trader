@@ -299,7 +299,7 @@ const COLS=[
   {k:'pval',t:'Signif',num:1,on:1,f:'rng'},
   {k:'capital',t:'Capital',num:1,on:1,f:'rng'},
   {k:'net_rs',t:'Net ₹',num:1,on:1,f:'rng'},
-  {k:'tax_rs',t:'Tax ₹',num:1,on:0,f:'rng'},
+  {k:'tax_rs',t:'Tax ₹',num:1,on:1,f:'rng'},
   {k:'netcap',t:'Net÷Cap',num:1,on:0,f:'rng'},
   // ---- extra columns surfaced by the Detailed / Entry-Exit views (off in Quick) ----
   {k:'net',t:'Net %',num:1,on:0,f:'rng'},
@@ -735,7 +735,7 @@ function cell(r,k){
     case 'maxtd':return r.maxtd!=null?`<span class="mono">${r.maxtd}</span>`:dash();
     case 'untouched':return _untouchedCell(r);
     case 'deploy':return deployCell(r);
-    case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html" target="_blank" rel="noopener">Lab ↗</a>`:dash();
+    case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html?lots=${LOTS}" target="_blank" rel="noopener">Lab ↗</a>`:dash();
   }
   return '';
 }
