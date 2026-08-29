@@ -4782,9 +4782,25 @@ the broker down: nothing added, gate falls back to day-scoped, page unchanged.
    matched the broker exactly and the user's memory of "positive EOD" was his own `manual` book
    (+₹4,155 that day) — a real number, just not the one he was comparing against.
 
-### Still open (deliberately not fixed here)
+### The netting half — and why the OBVIOUS fix was wrong (commit `93c07c1`)
 
 `_net_rows` lets **`externally_closed`** rows participate in netting (only `open`/`blocked` are
-excluded), which is what created the phantom. It is money-adjacent and a previous netting change
-regressed 507 records — it needs a whole-DB old-vs-new A/B before touching. The broker-truth pass
-HIDES the symptom on the Orders page; per-strategy views still carry it.
+excluded), and Pass 2 takes the OLDEST opposite same-strategy leg — so the 18-Aug ghost sat in
+front of the live 25-Aug leg and won.
+
+**The obvious fix — exclude `externally_closed` from netting — was REJECTED by the A/B.** Those
+rows also ABSORB exits that would otherwise cascade into much older unrelated legs. Whole-DB A/B:
+−30 completed trades, +17 phantom opens, total P&L −₹31,458, and it INVENTED new cross-day
+pairings (a 05-Aug entry paired to a 21-Aug exit for +₹10,196). It traded one phantom for several.
+
+**Shipped instead: demote, don't delete.** Prefer a LIVE same-strategy leg; keep the dead one as a
+fallback so its absorber role survives. Whole-DB A/B of the shipped file (4,301 rows, 77
+`externally_closed`): completed trades 2042 → 2042 (**+0**), open legs 92 → 91, exactly **one**
+trade disappears (phantom +₹10,257) and **one** appears (correct +₹180), exactly **one** day moves
+(25-Aug, −₹10,077), and `_net_rows_chrono` is **BIT-IDENTICAL** — so the all-strategies calendar
+that matches Zerodha Console to the paisa is untouched, and the per-strategy view now AGREES with
+the broker-true view instead of contradicting it.
+
+**Rule:** on a money-path netting change, the A/B is not a formality — here it rejected the first
+design outright. Blast radius must be exactly the bug. Never touch `_net_rows` without it
+(the 507-record regression is why).
