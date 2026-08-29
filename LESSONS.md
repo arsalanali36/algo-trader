@@ -4859,3 +4859,49 @@ the broker-true view instead of contradicting it.
 **Rule:** on a money-path netting change, the A/B is not a formality — here it rejected the first
 design outright. Blast radius must be exactly the bug. Never touch `_net_rows` without it
 (the 507-record regression is why).
+
+---
+
+## TRAP #192 — An alarm with 28 detectors and no last mile: everything landed in a bell nobody reads (2026-08-30, autonomy audit)
+
+**Symptom.** User asked whether the system could run unattended for a month. Detection
+looked healthy — `error_watch` runs in the dashboard loop and catches dead strategy
+processes, dead systemd services, and log tracebacks; `reconcile`, `order_store`,
+`range_trader` (token), `config_drift_check` and `eod_report` all call
+`notify.error()`. 28 call sites in total.
+
+**Root.** `_core/notify.py` had **no telegram bridge at all**. Every one of those 28
+detectors wrote to the in-app bell and stopped there — and the bell had **344 unread**
+(284 of them option-chain alerts). The only thing that reached the phone was
+`invariant_guard`: once a day at 08:45, five narrow app-vs-broker checks. So token
+expiry, failed exits, a strategy that died mid-day, a down service — none of it could
+reach the user. This is TRAP #191's lesson one level up: *an alarm nobody can hear is
+not an alarm* — there it was an unread bell, here it was a channel that was never wired.
+
+**Second bug found while fixing it.** `telegram_notify._dispatch()` sends from a DAEMON
+thread (correct for a long-lived loop — the money path must never block on a network
+call). But a ONE-SHOT process — any systemd timer or CLI tool — returns immediately and
+Python kills daemon threads on exit, so **the push never left the box**. `invariant_guard`
+had already worked around this locally with a `sync_push` flag; every other timer-driven
+push was silently dying. Proven both ways in test: with the fix `DELIVERED`, with
+`atexit.unregister(flush)` the file stays empty.
+
+**Fix.**
+- `notify.push()` bridges new RED records to telegram, with the rules that keep the
+  *phone* from becoming the next wallpaper: level=error only · muted sources
+  (default `chain`) · one message per problem (re-notify after 6h) · rate cap 10/hr
+  (one summary line at the cap, then silence) · `resolve()` sends "✅ Theek ho gaya",
+  but only for keys that actually went to the phone.
+- `telegram_notify.flush()` + `atexit` registration — one-shot delivery now works for
+  every caller, no per-callsite change needed.
+- Whole bridge is `try/except` + lazy import: it runs inside order-path exception
+  handlers, so a telegram failure must never break a trade (tested).
+
+**Guards.** Rate cap and mute list are the structural part — without them the fix
+recreates the same failure on a different channel. When adding a new alert source, ask
+whether it belongs on the phone or only in the bell, and set `alert_mute_sources`
+accordingly.
+
+**Lesson.** Detection and delivery are two different systems. Counting detectors tells
+you nothing about whether anyone will find out. For any alarm, trace it all the way to
+the human — and verify by **actually sending it**, not by reading the code.
