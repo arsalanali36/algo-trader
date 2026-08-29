@@ -77,8 +77,8 @@
   "deploy_key": "orb_v1",
   "deployed": "orb_v1",
   "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
+   "method": "REAL NIFTY WEEK held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
    "approx": false,
    "full": {
     "sharpe": 2.319,
@@ -86,15 +86,26 @@
     "maxdd": -1.81
    },
    "train": {
-    "sharpe": 2.345,
-    "net_pct": 27.48,
-    "maxdd": -1.81
+    "sharpe": 0.93,
+    "net_pct": 9.262
    },
    "oos": {
-    "sharpe": 2.449,
-    "net_pct": 11.03,
-    "maxdd": -0.89
-   }
+    "sharpe": 0.329,
+    "net_pct": 1.445
+   },
+   "note": "BS->real reprice (TRAP #136). coverage 567/567 of bs|full trades."
+  },
+  "real_full": {
+   "sharpe": 0.72,
+   "net_pct": 10.382,
+   "net_abs": 103822,
+   "maxdd": -2.694,
+   "win_rate": 38.977,
+   "profit_factor": 1.24,
+   "trades": 567,
+   "coverage_pct": 100.0,
+   "cov_from": "2022-01-05",
+   "cov_to": "2026-07-08"
   }
  },
  {
@@ -134,8 +145,8 @@
   "deploy_key": "straddle_v1",
   "deployed": "straddle_v1",
   "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
+   "method": "REAL NIFTY WEEK held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
    "approx": false,
    "full": {
     "sharpe": 3.284,
@@ -143,15 +154,26 @@
     "maxdd": -1.1
    },
    "train": {
-    "sharpe": 3.177,
-    "net_pct": 45.64,
-    "maxdd": -0.97
+    "sharpe": -2.147,
+    "net_pct": -14.722
    },
    "oos": {
-    "sharpe": 3.541,
-    "net_pct": 29.32,
-    "maxdd": -1.56
-   }
+    "sharpe": -1.22,
+    "net_pct": -14.355
+   },
+   "note": "BS->real reprice (TRAP #136). coverage 947/1625 of bs|full trades."
+  },
+  "real_full": {
+   "sharpe": -1.538,
+   "net_pct": -29.077,
+   "net_abs": -290765,
+   "maxdd": -30.944,
+   "win_rate": 32.418,
+   "profit_factor": 0.681,
+   "trades": 947,
+   "coverage_pct": 58.3,
+   "cov_from": "2021-07-02",
+   "cov_to": "2026-07-09"
   }
  },
  {
@@ -192,8 +214,8 @@
   "deploy_key": "dvert_v1",
   "deployed": "dvert_v1",
   "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
+   "method": "REAL NIFTY WEEK held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
    "approx": true,
    "full": {
     "sharpe": 1.593,
@@ -201,15 +223,26 @@
     "maxdd": -2.01
    },
    "train": {
-    "sharpe": 1.928,
-    "net_pct": 29.21,
-    "maxdd": -1.47
+    "sharpe": -0.164,
+    "net_pct": -1.152
    },
    "oos": {
-    "sharpe": 0.925,
-    "net_pct": 7.54,
-    "maxdd": -2.54
-   }
+    "sharpe": -0.477,
+    "net_pct": -4.781
+   },
+   "note": "BS->real reprice (TRAP #136). coverage 687/1227 of bs|full trades."
+  },
+  "real_full": {
+   "sharpe": -0.347,
+   "net_pct": -5.933,
+   "net_abs": -59332,
+   "maxdd": -10.03,
+   "win_rate": 41.194,
+   "profit_factor": 0.904,
+   "trades": 687,
+   "coverage_pct": 56.0,
+   "cov_from": "2021-07-05",
+   "cov_to": "2026-07-08"
   }
  },
  {
@@ -247,8 +280,8 @@
   "p_value": 0.072,
   "created": "2026-07-10 23:09",
   "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
+   "method": "REAL NIFTY WEEK held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
    "approx": true,
    "full": {
     "sharpe": 3.96,
@@ -256,15 +289,26 @@
     "maxdd": -0.79
    },
    "train": {
-    "sharpe": 3.636,
-    "net_pct": 48.4,
-    "maxdd": -0.62
+    "sharpe": -2.922,
+    "net_pct": -15.167
    },
    "oos": {
-    "sharpe": 4.666,
-    "net_pct": 38.41,
-    "maxdd": -1.14
-   }
+    "sharpe": -2.048,
+    "net_pct": -20.398
+   },
+   "note": "BS->real reprice (TRAP #136). coverage 976/1686 of bs|full trades."
+  },
+  "real_full": {
+   "sharpe": -2.289,
+   "net_pct": -35.566,
+   "net_abs": -355655,
+   "maxdd": -36.446,
+   "win_rate": 30.738,
+   "profit_factor": 0.57,
+   "trades": 976,
+   "coverage_pct": 57.9,
+   "cov_from": "2021-07-02",
+   "cov_to": "2026-07-09"
   }
  },
  {
@@ -304,8 +348,8 @@
   "deploy_key": "orbst_v1",
   "deployed": "orbst_v1",
   "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
+   "method": "REAL NIFTY WEEK held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
    "approx": false,
    "full": {
     "sharpe": 2.003,
@@ -313,15 +357,26 @@
     "maxdd": -0.99
    },
    "train": {
-    "sharpe": 2.045,
-    "net_pct": 31.09,
-    "maxdd": -0.77
+    "sharpe": 0.858,
+    "net_pct": 4.836
    },
    "oos": {
-    "sharpe": 1.827,
-    "net_pct": 18.91,
-    "maxdd": -1.24
-   }
+    "sharpe": 1.034,
+    "net_pct": 9.371
+   },
+   "note": "BS->real reprice (TRAP #136). coverage 570/1024 of bs|full trades."
+  },
+  "real_full": {
+   "sharpe": 0.948,
+   "net_pct": 14.1,
+   "net_abs": 141001,
+   "maxdd": -2.861,
+   "win_rate": 36.842,
+   "profit_factor": 1.436,
+   "trades": 570,
+   "coverage_pct": 55.7,
+   "cov_from": "2021-07-06",
+   "cov_to": "2026-07-08"
   }
  },
  {
@@ -589,8 +644,8 @@
   "deploy_key": "backspread_v1",
   "deployed": "backspread_v1",
   "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
+   "method": "REAL NIFTY WEEK held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
    "approx": true,
    "full": {
     "sharpe": 1.515,
@@ -598,15 +653,26 @@
     "maxdd": -1.97
    },
    "train": {
-    "sharpe": 1.316,
-    "net_pct": 15.59,
-    "maxdd": -1.46
+    "sharpe": -1.242,
+    "net_pct": -7.244
    },
    "oos": {
-    "sharpe": 1.917,
-    "net_pct": 13.43,
-    "maxdd": -2.24
-   }
+    "sharpe": -1.096,
+    "net_pct": -9.786
+   },
+   "note": "BS->real reprice (TRAP #136). coverage 682/1124 of bs|full trades."
+  },
+  "real_full": {
+   "sharpe": -1.143,
+   "net_pct": -17.03,
+   "net_abs": -170296,
+   "maxdd": -17.032,
+   "win_rate": 29.765,
+   "profit_factor": 0.69,
+   "trades": 682,
+   "coverage_pct": 60.7,
+   "cov_from": "2021-07-02",
+   "cov_to": "2026-07-06"
   }
  },
  {
@@ -756,8 +822,8 @@
   "deploy_key": "banknifty_v1",
   "deployed": "banknifty_v1",
   "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
+   "method": "REAL BANKNIFTY WEEK held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
    "approx": true,
    "full": {
     "sharpe": 1.367,
@@ -765,15 +831,26 @@
     "maxdd": -3.08
    },
    "train": {
-    "sharpe": 1.451,
-    "net_pct": 17.19,
-    "maxdd": -3.08
+    "sharpe": -0.4,
+    "net_pct": -3.726
    },
    "oos": {
-    "sharpe": 1.216,
-    "net_pct": 4.92,
-    "maxdd": -2.08
-   }
+    "sharpe": 0.026,
+    "net_pct": 0.108
+   },
+   "note": "BS->real reprice (TRAP #136). coverage 342/342 of bs|full trades."
+  },
+  "real_full": {
+   "sharpe": -0.294,
+   "net_pct": -4.008,
+   "net_abs": -40075,
+   "maxdd": -9.432,
+   "win_rate": 37.719,
+   "profit_factor": 0.902,
+   "trades": 342,
+   "coverage_pct": 100.0,
+   "cov_from": "2022-01-05",
+   "cov_to": "2026-07-08"
   }
  },
  {
@@ -1049,7 +1126,32 @@
   "rms_full_sharpe": 1.753,
   "p_value": 0.0,
   "created": "2026-07-21 12:03",
-  "note": "BS = Black-Scholes MONTHLY ATM buy. Option BUYER + OVERNIGHT hold => BS under-prices theta (TRAP #136). Validate on real lake / forward-paper Real-vs-BS."
+  "note": "BS = Black-Scholes MONTHLY ATM buy. Option BUYER + OVERNIGHT hold => BS under-prices theta (TRAP #136). Validate on real lake / forward-paper Real-vs-BS.",
+  "real_full": {
+   "sharpe": 2.16,
+   "net_pct": 87.547,
+   "net_abs": 875468,
+   "maxdd": -3.672,
+   "win_rate": 42.105,
+   "profit_factor": 2.307,
+   "trades": 627,
+   "coverage_pct": 56.7,
+   "cov_from": "2021-07-06",
+   "cov_to": "2026-07-08"
+  },
+  "real_cost": {
+   "method": "REAL NIFTY MONTH held-strike premium + Zerodha charges + DOM slip",
+   "date": "2026-08-29",
+   "note": "BS->real reprice (TRAP #136). coverage 627/1105 of bs|full trades.",
+   "train": {
+    "sharpe": 2.454,
+    "net_pct": 56.775
+   },
+   "oos": {
+    "sharpe": 1.781,
+    "net_pct": 30.621
+   }
+  }
  },
  {
   "slug": "bnf_920_strangle",

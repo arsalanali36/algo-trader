@@ -379,7 +379,8 @@ function chipsFor(cfg,keys,zone){
   return `<div class="eebox ${zone}"><div class="chips">${out.join('')}</div></div>`;
 }
 function srcCell(r){
-  if(r.source==='Backtested')return '<span class="src bt" title="Has a validated backtest run">🔬 Backtested</span>';
+  const real=r.realPriced?` <span class="src" style="background:#3d1a1a;color:#ff7b72;border-color:#5a2a2a" title="Numbers are REAL-lake repriced (real option premium + Zerodha charges + DOM slippage), NOT Black-Scholes. Coverage ${r._cov!=null?r._cov+'%':'—'} of trades.">🔴 REAL</span>`:'';
+  if(r.source==='Backtested')return '<span class="src bt" title="Has a validated backtest run">🔬 Backtested</span>'+real;
   if(r.source==='Discretionary')return '<span class="src disc" title="Trading live/paper without a systematic backtest">✋ Discretionary</span>';
   return '<span class="src un" title="No backtest, not deployed">· untested</span>';
 }
@@ -455,7 +456,11 @@ function buildRows(){
   Object.keys(fams).forEach(f=>FAMDESC[f]={name:fams[f].name||f,desc:fams[f].desc||''});
   const strat=REG.strategies||{};
   ROWS=Object.keys(strat).map(id=>{
-    const m=strat[id]||{}; const r=runOf(m.slug); const b=(r&&r.bs_full)||{};
+    const m=strat[id]||{}; const r=runOf(m.slug);
+    // Prefer REAL-lake repriced numbers over Black-Scholes when the run has them
+    // (reprice_registry_real.py -> real_full). BS overstates option-buyer P&L (TRAP #136),
+    // so the ORB family's headline Sharpe/Net%/Win/MaxDD + verdict now show the honest number.
+    const _bs=(r&&r.bs_full)||{}; const _realFull=(r&&r.real_full)||null; const b=_realFull||_bs;
     const rc=(r&&r.real_cost)||{}; const c=(m.config_key&&CFG[m.config_key])||{};
     const _risk=(CFG._risk)||{}; const _gl=_risk.global||{}; const _ps=(m.config_key&&_risk.per_strategy&&_risk.per_strategy[m.config_key])||{};
     const source=(r?'Backtested':(((m.status==='live'||m.status==='legacy')||c.active)?'Discretionary':'untested'));
@@ -483,6 +488,9 @@ function buildRows(){
       instrument:m.instrument, hold:m.hold, structure:m.structure,
       legs:(m.legs!=null?m.legs:undefined),
       verdict,
+      realPriced:!!_realFull,
+      _bsSharpe:(_bs.sharpe!=null?_bs.sharpe:undefined),
+      _cov:(_realFull&&_realFull.coverage_pct!=null?_realFull.coverage_pct:undefined),
       tf:r?r.tf:undefined,
       sharpe:(b.sharpe!=null?b.sharpe:undefined),
       maxdd:(b.maxdd!=null?b.maxdd:undefined),
@@ -698,7 +706,9 @@ function cell(r,k){
         return `<span class="tag ${cl}" title="Ctrl+click to filter" onclick="ctrlFilter(event,'structure','${esc(r.structure)}')">${esc(r.structure)}</span>`;}
     case 'legs':return r.legs!=null?`<span>${r.legs}</span>`:dash();
     case 'tf':return r.tf?r.tf:dash();
-    case 'sharpe':return fnum(r.sharpe,2,'',v=>v>=1?'pos':(v>=0.5?'':'neg'));
+    case 'sharpe':{const base=fnum(r.sharpe,2,'',v=>v>=1?'pos':(v>=0.5?'':'neg'));
+        if(r.realPriced&&r._bsSharpe!=null)return `<span title="REAL-lake Sharpe (Black-Scholes said ${(+r._bsSharpe).toFixed(2)}; coverage ${r._cov!=null?r._cov+'%':'—'} of trades). BS overstates option-buyer P&L.">${base}<sup style="color:#ff7b72;font-size:9px">R</sup></span>`;
+        return base;}
     case 'maxdd':return fnum(r.maxdd,1,'%',()=>'neg');
     case 'win':return fnum(r.win,0,'%');
     case 'trades':return (r.trades!=null&&!isNaN(r.trades))?Number(r.trades).toLocaleString('en-IN'):dash();

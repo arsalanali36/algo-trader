@@ -119,7 +119,10 @@ def _load_meta_params(slug):
 
 def _one_run(slug, reg=None):
     data = _bc._load_results(slug)
-    combo, _key = _bc._pick_combo(data, "bs", "full")
+    # Prefer the REAL-lake repriced combo when present (reprice_registry_real.py wrote
+    # real|full for the BS-inflated ORB family); _pick_combo falls back to bs|full for
+    # every other run gracefully. So Net/Tax/Capital track the honest number, not BS.
+    combo, _key = _bc._pick_combo(data, "real", "full")
     trades = (combo or {}).get("all_trades") or []
     if not trades:
         return None
