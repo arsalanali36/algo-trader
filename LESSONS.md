@@ -4810,6 +4810,15 @@ Fixed as three properties an alarm must have (commit `bd0f449`):
 Plus an independent `algo-invariant.timer` (Mon–Fri 08:45 IST) that runs the check even when
 algo-monitor is down — which is precisely when you most want to know.
 
+**And a trap inside the fix itself, caught only by actually sending the test instead of assuming:**
+`telegram_notify._dispatch()` fires a **daemon** thread. In the long-lived loop that is correct
+(never block the money path). In a `Type=oneshot` timer service the process exits immediately,
+Python kills the daemon thread, and the push silently never leaves the box — the brand-new daily
+alarm would have been dead on arrival, the exact shape of TRAP #120. `run(sync_push=)` now sends
+synchronously from the CLI/timer path. **Rule: a fire-and-forget notifier is only safe in a process
+that outlives it. Verify a new alert channel by firing it for real, once — "the code looks right"
+is not delivery.**
+
 **Rule: when a bug reaches the user, ask "did a guard already catch this?" BEFORE writing new
 detection.** Here the detection was fine and the DELIVERY was broken. Adding a second detector
 would have added noise and fixed nothing.
