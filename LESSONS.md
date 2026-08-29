@@ -4784,6 +4784,36 @@ principle as `reconcile_broker`). Two places, one idea:
 confident "held", any read failure → verdict `None` → exact prior behaviour. Verified by forcing
 the broker down: nothing added, gate falls back to day-scoped, page unchanged.
 
+### The alarm existed. It fired. Nobody heard it. ← the real lesson
+
+`invariant_guard.inv_app_matches_broker` compares app-vs-Kite net qty per contract and **had
+already caught this** — running it during the session printed the four missing legs verbatim. Its
+RED had been sitting in a notification bell displaying **"99+"**.
+
+Worse, it was *guaranteed* to be ignored: `_app_live_net()` built the app side from a day-scoped
+read + an `allow_overnight` allow-list, so a hand-carried `manual` position was permanently
+"missing" from the app side and the invariant screamed RED at a perfectly healthy position **every
+cycle, forever**. A guard that cries wolf daily has already failed, no matter how correct its
+detection logic is.
+
+Fixed as three properties an alarm must have (commit `bd0f449`):
+
+1. **Truthful** — no permanent false positives (4 RED → 0 RED on real data). Expired contracts are
+   excluded from the comparison: they cannot be a broker position, so they could only ever produce
+   a RED nobody can act on.
+2. **Visible** — one header pill on every page (`health-pill.js`), green/red/grey, plain language.
+   Backed by a status file the guard writes, so a page render never costs a broker call. `stale` is
+   deliberately NOT green — "not checked recently" must never look like "all fine".
+3. **Pushed** — new REDs go to Telegram, so the user learns without opening anything. Only NEW reds
+   push and one "cleared" message when the last resolves, so the phone cannot become the next bell.
+
+Plus an independent `algo-invariant.timer` (Mon–Fri 08:45 IST) that runs the check even when
+algo-monitor is down — which is precisely when you most want to know.
+
+**Rule: when a bug reaches the user, ask "did a guard already catch this?" BEFORE writing new
+detection.** Here the detection was fine and the DELIVERY was broken. Adding a second detector
+would have added noise and fixed nothing.
+
 ### Reusable rules
 
 1. **A day-scoped query cannot answer a multi-day question.** Any `trades_for(today)` feeding a
