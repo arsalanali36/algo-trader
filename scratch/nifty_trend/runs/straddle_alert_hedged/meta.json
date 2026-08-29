@@ -1,0 +1,47 @@
+{
+ "slug": "straddle_alert_hedged",
+ "design": "straddle_alert_hedged",
+ "title": "02.07.01 - Straddle @ Alert Hedged Live (iron-fly +/-400pt, intraday, REAL-lake, 4 lots)",
+ "tf": "intraday",
+ "params": {
+  "wing": 8,
+  "basket": 4000,
+  "structure": "iron_fly",
+  "lots": 4
+ },
+ "exit": "Rs4,000 basket SL/target (else EOD)",
+ "instrument": "NIFTY",
+ "lot_size": 75,
+ "window": [
+  "2021-07-01",
+  "2026-08-28"
+ ],
+ "days": 1275,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 0.738,
+  "net_pct": 64.712,
+  "maxdd": -26.964,
+  "win_rate": 54.902,
+  "trades": 1275,
+  "profit_factor": 1.114
+ },
+ "combos": {
+  "train": {
+   "sharpe": 0.726,
+   "net_pct": 42.85
+  },
+  "oos": {
+   "sharpe": 0.763,
+   "net_pct": 21.862
+  }
+ },
+ "p_value": 0.0394,
+ "created": "2026-08-29 14:08",
+ "deploy_key": "straddle_alert_hedged",
+ "deployed": "straddle_alert_hedged",
+ "real_cost": {
+  "method": "REAL OptChainLake_1m premium + date-aware Zerodha charges, 4 lots (lot 75)",
+  "note": "Live hedged config: SELL ATM CE+PE + BUY +/-8 (=Rs400) wings, Rs4k basket. Wings cut P&L vs naked. Wings at Rs400 far from ~25-40pt intraday gap -> limited tail cap at Rs4k scale. Turned OFF 2026-08-29. net_pct on Rs4L cap."
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "slug": "straddle_alert_positional",
+ "design": "straddle_alert_positional",
+ "title": "02.07.02 - Straddle @ Alert (naked, POSITIONAL hold-to-expiry, REAL-lake, 4 lots)",
+ "tf": "positional",
+ "params": {
+  "wing": 0,
+  "basket": 4000,
+  "structure": "short_straddle",
+  "lots": 4
+ },
+ "exit": "Rs4,000 basket SL/target (else EOD)",
+ "instrument": "NIFTY",
+ "lot_size": 75,
+ "window": [
+  "2021-07-01",
+  "2026-08-28"
+ ],
+ "days": 1275,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 1.006,
+  "net_pct": 101.914,
+  "maxdd": -29.81,
+  "win_rate": 58.353,
+  "trades": 1275,
+  "profit_factor": 1.152
+ },
+ "combos": {
+  "train": {
+   "sharpe": 1.072,
+   "net_pct": 73.115
+  },
+  "oos": {
+   "sharpe": 0.87,
+   "net_pct": 28.799
+  }
+ },
+ "p_value": 0.0084,
+ "created": "2026-08-29 14:08",
+ "deploy_key": "straddle_alert_positional",
+ "deployed": "straddle_alert_positional",
+ "real_cost": {
+  "method": "REAL OptChainLake_1m premium + date-aware Zerodha charges, 4 lots (lot 75)",
+  "note": "Naked ATM straddle on first alert/day, HELD to weekly expiry (no 3:15 force-exit), Rs4k basket. Only ~2.4% of trades actually hold overnight; edge = not scratching un-resolved trades at 3:15 (overnight theta -> next-day Rs4k target). 2022/2023 (intraday losing yrs) flip green. Naked = unbounded overnight gap tail (research; forward-paper before real money). NIFTY only. net_pct on Rs4L cap, not true CAGR."
+ }
+}

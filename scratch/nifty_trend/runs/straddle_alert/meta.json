@@ -1,0 +1,47 @@
+{
+ "slug": "straddle_alert",
+ "design": "straddle_alert",
+ "title": "02.07 - Straddle @ Alert (naked ATM, intraday, REAL-lake, 4 lots)",
+ "tf": "intraday",
+ "params": {
+  "wing": 0,
+  "basket": 4000,
+  "structure": "short_straddle",
+  "lots": 4
+ },
+ "exit": "Rs4,000 basket SL/target (else EOD)",
+ "instrument": "NIFTY",
+ "lot_size": 75,
+ "window": [
+  "2021-07-01",
+  "2026-08-28"
+ ],
+ "days": 1275,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 0.862,
+  "net_pct": 85.497,
+  "maxdd": -31.206,
+  "win_rate": 58.275,
+  "trades": 1275,
+  "profit_factor": 1.129
+ },
+ "combos": {
+  "train": {
+   "sharpe": 0.865,
+   "net_pct": 57.238
+  },
+  "oos": {
+   "sharpe": 0.856,
+   "net_pct": 28.259
+  }
+ },
+ "p_value": 0.0198,
+ "created": "2026-08-29 14:08",
+ "deploy_key": "straddle_alert",
+ "deployed": "straddle_alert",
+ "real_cost": {
+  "method": "REAL OptChainLake_1m premium + date-aware Zerodha charges, 4 lots (lot 75)",
+  "note": "Naked ATM straddle on first alert/day, Rs4k basket. Intraday Sharpe<1 (2 losing yrs) -> gate FAIL; naked-POSITIONAL variant (02.07.02) passes. NIFTY only (BankNifty loser). net_pct on Rs4L cap, not true CAGR."
+ }
+}

@@ -775,6 +775,17 @@
     "delta_ironfly",
     "delta_ironfly_btc"
    ]
+  },
+  "02.07.02": {
+   "name": "Straddle @ Alert — Naked Positional",
+   "config_key": null,
+   "slug": "straddle_alert_positional",
+   "status": "research",
+   "legs": 2,
+   "instrument": "NIFTY",
+   "hold": "Positional (to weekly expiry)",
+   "structure": "Short straddle (naked ATM CE+PE)",
+   "desc": "Research-only positional twin of 02.07: naked ATM straddle on first alert/day, HELD to weekly expiry (no 3:15 force-exit), Rs4k basket. Real-lake backtest: Sharpe 1.01, net +Rs4.08L/5yr, p=0.008, win 58%, maxDD -29.8% (on Rs4L) -> passes gate (intraday 02.07 fails at Sharpe<1). Edge = ~2.4% un-resolved trades held overnight instead of scratched at 3:15 (2022/2023 flip green). NAKED = unbounded overnight gap tail -> forward-paper before any real money. Not deployed (no live config). See memory project_code3b_alert_straddle_backtest."
   }
  }
 }
