@@ -68,6 +68,15 @@ if __name__ == '__main__':
     except Exception as _e:
         print(f"[monitor] weekly_ironfly_live not started: {_e}", flush=True)
 
+    # IV-pop M-rollover iron-fly (02.18, ~20s loop). OFF by default
+    # (config._m_pattern_ironfly.enabled=false), PAPER hard-locked. Self-contained in
+    # _ops/m_pattern_ironfly_live.py — no-op unless enabled.
+    try:
+        import m_pattern_ironfly_live
+        threading.Thread(target=m_pattern_ironfly_live.mpfly_loop, daemon=True).start()
+    except Exception as _e:
+        print(f"[monitor] m_pattern_ironfly_live not started: {_e}", flush=True)
+
     # StockMock-style (_sm) config strategies — generic scheduled leg-basket runner.
     # On a qualifying day at entry time, fires the configured legs once; exits are the
     # existing pos_monitor's job (per-leg SL% tag + EOD). PAPER. See _ops/sm_runner.py.

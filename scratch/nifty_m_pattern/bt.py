@@ -38,24 +38,23 @@ import os, sys, json
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(HERE, "..", "nifty_trend"))
 sys.path.insert(0, os.path.join(HERE, "..", "strangle_roll"))  # win over nifty_trend/engine.py
+sys.path.insert(0, os.path.join(ROOT, "strategies", "signals"))
 import charges as CH
+import m_pattern as mp     # SINGLE SOURCE of the M-signal (ADR-010) — live calls the SAME
 from engine import (load_lake, _prem, _spot_at, _minutes, _round50,
                     _nearest_weekly, LOT, POS_EXIT_HM)
 
 LOTS = 5
 QTY  = LOTS * LOT
 
-SIG_LO_HM = 935
-SIG_HI_HM = 1445
-
-# M-pattern strictness presets: (EXTREMA_W, SPIKE_LOOK, SPIKE_PCT, PB_PCT, TOL, BOUNCE_PCT)
-M_PRESETS = {
-    "loose":  (5, 90, 0.12, 0.04, 0.02, 0.015),
-    "medium": (6, 90, 0.18, 0.05, 0.015, 0.02),   # deployed
-    "strict": (7, 90, 0.25, 0.07, 0.01, 0.03),
-}
+# constants + M-detection come from the shared module (backtest == live, by construction)
+SIG_LO_HM = mp.SIG_LO
+SIG_HI_HM = mp.SIG_HI
+M_PRESETS = mp.M_PRESETS
+_extrema = mp._extrema          # re-export (harden.py reuses it)
 DEPLOYED = {"m": "medium", "wing": 250, "take": 0.50, "hold_days": 1}
 
 
@@ -71,52 +70,10 @@ def atm_combined_series(grid):
     return out
 
 
-def _extrema(vals, w):
-    n = len(vals); peaks, troughs = [], []
-    for i in range(n):
-        lo, hi = max(0, i - w), min(n, i + w + 1)
-        seg = vals[lo:hi]
-        if vals[i] == max(seg) and vals[i] > min(seg):
-            peaks.append(i)
-        elif vals[i] == min(seg) and vals[i] < max(seg):
-            troughs.append(i)
-    return set(peaks), set(troughs)
-
-
 def detect_signal(series, params):
-    """First M-rollover of the day -> (hhmm, spike_ratio) or None."""
-    EW, SL, SP, PB, TOL, BO = params
-    if len(series) < SL + 10:
-        return None
-    mins = [s[0] for s in series]; vals = [s[1] for s in series]
-    peaks, troughs = _extrema(vals, EW); n = len(vals)
-    for i in range(n):
-        if i not in peaks:
-            continue
-        p1 = vals[i]; base = min(vals[max(0, i - SL):i + 1])
-        if base <= 0 or p1 < base * (1 + SP):
-            continue
-        j = None
-        for k in range(i + 1, n):
-            if k in troughs and vals[k] <= p1 * (1 - PB):
-                j = k; break
-            if vals[k] > p1:
-                break
-        if j is None:
-            continue
-        t = vals[j]; q = None
-        for k in range(j + 1, n):
-            if k in peaks and vals[k] >= t * (1 + BO) and vals[k] <= p1 * (1 + TOL):
-                q = k; break
-            if vals[k] > p1 * (1 + TOL):
-                break
-        if q is None:
-            continue
-        for k in range(q + 1, n):
-            if vals[k] < t:
-                hm = mins[k]
-                return (hm, p1 / base) if SIG_LO_HM <= hm <= SIG_HI_HM else None
-    return None
+    """First M-rollover of the day -> (hhmm, spike_ratio) or None. Delegates to the
+    shared single-source detector (m_pattern.detect) so backtest == live (ADR-010)."""
+    return mp.detect(series, params, SIG_LO_HM, SIG_HI_HM)
 
 
 def _atm_at(grid, hm):

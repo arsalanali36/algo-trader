@@ -2114,7 +2114,7 @@ def liquidity_filter_enabled(strategy):
 # Add a new positional strategy's id here when you build one.
 _ALWAYS_OVERNIGHT = {"vrp_condor_v1", "vrp_v1", "distma_v1", "vrpw_v1", "orb_overnight_v1",
                      "strangle_920", "strangle_manual", "weekly_ironfly_v1",
-                     "bnf_strangle_hedged"}
+                     "m_pattern_ironfly_v1", "bnf_strangle_hedged"}
 
 # Positional strategies with a bounded MAX HOLD (trading days). Unlike the
 # hold-to-expiry set above, these carry overnight but are FORCE-squared-off once

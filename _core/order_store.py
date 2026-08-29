@@ -273,6 +273,7 @@ _EXIT_REASON_PREFIXES = (
     "STRADDLE",   # straddle_trader (_SL/_TP/_ROLLBACK)
     "STRANGLE",   # strangle_trader (_SL/_TP/_ROLLBACK) — 00.07 fwd-paper
     "IRONFLY",    # weekly_ironfly (02.17) — IRONFLY_TARGET/IRONFLY_EXPIRY/IRONFLY_UNWIND
+    "MPFLY",      # m_pattern_ironfly (02.18) — MPFLY_TARGET/MPFLY_TIMEEXIT/MPFLY_EXPIRY/MPFLY_UNWIND
     "DVERT",      # 02_debit_vertical (_SL/_TP/_ROLLBACK)
     "BSPRD",      # 05_backspread (_SL/_TP/_TRAIL/_ROLLBACK)
     "SVOL",       # 06_shortvol (_SL/_TP/_ROLLBACK)
@@ -296,7 +297,7 @@ _EXIT_REASON_PREFIXES = (
     # but never recognized here, so the Exit Reason column stayed blank for
     # every Long Straddle / Debit Vertical / Ratio Backspread / Short-Vol
     # Iron-Fly / VRP exit (task 71, same Critical-Rule-9 gap as ATR/RSI above).
-    "STRADDLE_", "STRANGLE_", "DVERT_", "BSPRD_", "SVOL_", "VRP_", "IRONFLY_",
+    "STRADDLE_", "STRANGLE_", "DVERT_", "BSPRD_", "SVOL_", "VRP_", "IRONFLY_", "MPFLY_",
 )
 
 
