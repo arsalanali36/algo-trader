@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-08-29 — 🤖 Auto-pick basket (deploy-gate har strategy pe) + 04.03.02 Ars-chain BUY → LIVE
+**Status:** DONE + VPS-LIVE (`6917839`; audit 0 FAIL; positions 78→78 unchanged, A-vs-B diff empty)
+**Layer:** ui + config (config write = sirf chainzone_v1 ka `mode`)
+**Kya:** (1) `_ops/strategy_candidates.py` — 35 Lab runs pe repo ka apna deploy-gate (Sharpe ≥1 real-cost · p<0.05 · train+OOS >0 · ≥100 trades · blocked list) → eligible/weak/rejected + wajah; Goal Planner ka naya `scope="auto"` inhi pe solve karta hai; page pe candidates table + "👉 live karne layak" / "⚠ live hai par gate fail" badges. (2) **04.03.02 (`chainzone_v1`) paper → LIVE.**
+**Do jaan-boojh ke FAIL (warna auto-picker ulta kaam karta):** Sharpe > 4 (auto-picker risk-adjusted return pe size karta → sabse smooth = sabse shaqi backtest ko sabse zyada lots; pehla solve ne 4 me se 3 lot 15.33-Sharpe run ko de diye the) · p-value missing ("test hua hi nahi" ≠ "paas").
+**Go-live (04.03.02):** sirf `mode` paper→live. **Kuch aur nahi chhua** — qty 1, active True, broker kite, max_trades 2/din, timeframe 5m sab waise hi. Rule 10 check pehle: per-strategy RMS `profit_target_rs`/`max_loss_rs` = ₹10L sentinel (= OFF, backtest me koi daily cap nahi tha), `default_sl_enabled` global False → koi Default-TSL overlay nahi, strategy ka apna ATR-stop hi chalta hai (= jo backtest hua). Backup `_config_backups/nifty_config.json.bak.chainzone_live_20260829_224526`, atomic write, readback VERIFY PASS. **Asar Monday 09:10 auto-start se** (`saved_mode = cfg[key]["mode"]` → `/api/start?mode=live`) — beech-market flip jaan-boojh ke nahi.
+**Kyun ye strategy:** scan me sirf do runs aise the jinke card pe **ek bhi flag nahi** — 04.03.02 unme se ek (real-cost Sharpe 1.87, p=0.000, 1,806 trades, maxDD −3.1%, train 1.83 ≈ OOS 1.96). Aur iska live signal `strategies/signals/chain_zone.py` se aata hai = wahi single source jo backtest chalata hai (ADR-010), to "live ≠ backtest" wala purana risk yahan structurally nahi hai. BUY hai → sirf premium ka risk, SPAN/cash-margin gate ka jhamela nahi.
+**Scan ka byproduct (flagged, user ka faisla):** **02.07.01 abhi LIVE hai par gate FAIL karti hai (Sharpe 0.74)**, jabki 5 paper strategies paas karti hain.
+**Ops note:** is session me taabadtod SSH connections se **fail2ban ne ghar ka IP (49.36.212.93) DROP kar diya** → port 22 timeout (dashboard chalu tha, isliye "server down" nahi). User ne Hostinger web-console se `fail2ban-client set sshd unbanip` kiya. Aage: SSH commands **batch** karo, ek session me 10 alag connection nahi. Aur `pgrep -af code3b-strategy` **apni hi command line match kar leta hai** → snapshot file corrupt dikhti hai; `pgrep -af 'code3b[-]strategy'` use karo.
+
 ## 2026-08-29 — 🚀 Growth Roadmap v2 — Portfolio projection + Goal Planner (target → lots basket) + daily expected-vs-actual log
 **Status:** DONE (local; audit 0 FAIL, apply-guard test 8/8 groups PASS, real-data browser harness verified)
 **Layer:** ui + config (apply path touches nifty_config lots/capital — money-adjacent, NOT order path)
