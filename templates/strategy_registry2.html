@@ -197,6 +197,22 @@
     .search{flex:1 1 100%}.search input{width:100%}
     .menu{right:auto;left:0;max-width:calc(100vw - 24px)}
   }
+  /* ---- lot control + star + row-select ---- */
+  .lotsctl{display:inline-flex;align-items:center;gap:0;border:1px solid var(--bd);border-radius:6px;overflow:hidden;background:var(--panel)}
+  .lotsctl button{background:var(--panel2,#21262d);border:none;color:var(--tx);font-size:13px;font-weight:700;width:24px;height:26px;cursor:pointer;line-height:1}
+  .lotsctl button:hover{background:var(--blue);color:#fff}
+  .lotsctl input{width:42px;height:26px;border:none;background:var(--bg);color:var(--tx);text-align:center;font-size:12px;font-weight:700;-moz-appearance:textfield}
+  .lotsctl input::-webkit-outer-spin-button,.lotsctl input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  #starToggle.on{background:#3a2f0a;border-color:#d29922;color:#f0c040}
+  .selbar{display:inline-flex;align-items:center;gap:5px;background:#0e2233;border:1px solid var(--blue);border-radius:6px;padding:3px 7px;font-size:11px;color:var(--tx)}
+  .selbar b{color:var(--blue);font-weight:700}
+  .selbar button{background:var(--panel2,#21262d);border:1px solid var(--bd);border-radius:4px;color:var(--tx);font-size:10.5px;font-weight:600;padding:2px 6px;cursor:pointer}
+  .selbar button:hover{background:var(--blue);color:#fff}
+  .selbar #selView.on{background:var(--blue);color:#fff}
+  .star{cursor:pointer;color:#4a5568;margin-right:5px;font-size:13px;user-select:none}
+  .star:hover{color:#d29922}
+  .star.on{color:#f0c040}
+  input.rsel{accent-color:var(--blue);margin-right:5px;vertical-align:middle;cursor:pointer}
 </style></head>
 <body>
 <div class="wrap">
@@ -205,9 +221,9 @@
     <span class="badge2">v2</span>
     <span class="sub">Every strategy in one sortable, filterable table — deployed · research · legacy · backtest.</span>
     <div class="quick" data-mtools="Pages">
-      <a class="qbtn" href="/lab">🧪 Lab hub</a>
-      <a class="qbtn" href="/lab/compare.html">⚖️ Compare</a>
-      <a class="qbtn" href="/lab/portfolio.html">📦 Portfolio</a>
+      <a class="qbtn" href="/lab" target="_blank" rel="noopener">🧪 Lab hub</a>
+      <a class="qbtn" href="/lab/compare.html" target="_blank" rel="noopener">⚖️ Compare</a>
+      <a class="qbtn" href="/lab/portfolio.html" target="_blank" rel="noopener">📦 Portfolio</a>
       <a class="qbtn" href="/registry">🗂️ Classic</a>
       <a class="qbtn" href="/" style="margin-left:4px">← Dashboard</a>
     </div>
@@ -223,6 +239,19 @@
       <button data-v="ee" onclick="setView('ee')">🎯 Entry / Exit</button>
     </div>
     <span class="hk" title="Alt+R clears all filters">Alt<span>+</span>R = clear</span>
+    <span class="lbl" title="Set your lot size — Net ₹ / Tax ₹ / Capital scale to it. Backtest SHAPE (Sharpe/Win%/PF/MaxDD%) never changes.">Lots</span>
+    <div class="lotsctl">
+      <button type="button" onclick="bumpLots(-1)">−</button>
+      <input id="lotsIn" type="number" min="1" value="1" onchange="setLots(this.value)">
+      <button type="button" onclick="bumpLots(1)">＋</button>
+    </div>
+    <button class="dbtn" id="starToggle" onclick="toggleStarFilter()" title="Show only ⭐ starred strategies">⭐ Starred</button>
+    <span id="selbar" class="selbar" style="display:none">
+      <b><span id="seln">0</span> sel</b>
+      <button type="button" id="selView" onclick="toggleSelView()" title="Show only selected rows (a filter view)">👁 View</button>
+      <button type="button" onclick="selectAllVisible()" title="Add all currently-visible rows">+all</button>
+      <button type="button" onclick="rowSelClear()" title="Clear selection">✕</button>
+    </span>
     <span class="lbl">Group</span>
     <div class="seg" id="grp">
       <button data-g="family" class="on">Family</button>
@@ -268,6 +297,10 @@ const COLS=[
   {k:'win',t:'Win%',num:1,on:1,f:'rng'},
   {k:'trades',t:'Trades',num:1,on:1,f:'rng'},
   {k:'pval',t:'Signif',num:1,on:1,f:'rng'},
+  {k:'capital',t:'Capital',num:1,on:1,f:'rng'},
+  {k:'net_rs',t:'Net ₹',num:1,on:1,f:'rng'},
+  {k:'tax_rs',t:'Tax ₹',num:1,on:0,f:'rng'},
+  {k:'netcap',t:'Net÷Cap',num:1,on:0,f:'rng'},
   // ---- extra columns surfaced by the Detailed / Entry-Exit views (off in Quick) ----
   {k:'net',t:'Net %',num:1,on:0,f:'rng'},
   {k:'pf',t:'PF',num:1,on:0,f:'rng'},
@@ -294,12 +327,18 @@ let S={q:'',group:'family',sort:{k:'id',dir:1},colf:{},showFilters:false};
 let SAVED=[]; try{SAVED=JSON.parse(localStorage.getItem('reg2_saved')||'[]')||[]}catch(e){}
 try{const c=JSON.parse(localStorage.getItem('reg2_cols')||'null'); if(c)COLS.forEach(x=>{if(c[x.k]!==undefined)x.on=c[x.k]?1:0});}catch(e){}
 COLS.forEach(c=>c.vis=!!c.on);
+// lot-scaling + star + row-select state
+let ECON={};   // slug(lower) -> per-run lot-independent economics
+let LOTS=(()=>{try{return Math.max(1,parseInt(localStorage.getItem('reg2_lots'))||1)}catch(e){return 1}})();
+let STAR=(()=>{try{return new Set(JSON.parse(localStorage.getItem('reg2_stars')||'[]')||[])}catch(e){return new Set()}})();
+let SEL=new Set();        // checkbox-selected ids (session only)
+let showStar=false, showSel=false;
 let collapsed={};
 
 // ---------- view modes: Quick (default cols) / Detailed (all metrics) / Entry-Exit (how it trades) ----------
 let VIEW=(()=>{try{return localStorage.getItem('reg2_view')||'quick'}catch(e){return 'quick'}})();
 const VIEWS={
-  det:['_idx','id','name','source','verdict','sharpe','net','maxdd','win','pf','trades','oos_sharpe','oos_net','train_sharpe','pval'],
+  det:['_idx','id','name','source','verdict','sharpe','net','maxdd','win','pf','trades','pval','capital','net_rs','tax_rs','netcap','oos_sharpe','oos_net','train_sharpe'],
   ee:['_idx','id','name','source','tf','structure','entry','exit','sl','target','maxtd','untouched'],
 };
 const VIEWHINT={
@@ -465,24 +504,64 @@ function buildRows(){
       config:m.config_key||'', file:(m.live_file||'').replace('strategies/','').replace('_core/',''),
       // raw refs for deploy/open
       _ck:m.config_key, _slug:m.slug, _run:!!r,
+      _econ:(m.slug&&ECON[String(m.slug).toLowerCase()])||null,
       _timer:(m.deploy_kind==='timer'?m.timer_unit:null),
     };
   }).filter(row=>!regHidden(row._ck));
 }
 
+// Scale each run's LOT-INDEPENDENT economics to the current LOTS. Shape metrics
+// (Sharpe/Win%/PF/MaxDD%) are untouched — they don't depend on size. Charges are NOT
+// naive×N: brokerage is flat, so net(N) beats net(1)×N at higher lots (StockMock lesson).
+function applyLots(){
+  const N=Math.max(1,LOTS|0);
+  ROWS.forEach(r=>{
+    const e=r._econ;
+    if(!e){r.capital=undefined;r.net_rs=undefined;r.tax_rs=undefined;r.netcap=undefined;return;}
+    const gross = (e.gross_per_lot||0)*N;
+    const tax   = (e.flat_charge||0) + (e.per_lot_charge||0)*N;
+    const net   = gross - tax;
+    const cap   = (e.capital_per_lot!=null)? e.capital_per_lot*N : null;
+    r.net_rs = Math.round(net);
+    r.tax_rs = Math.round(tax);
+    r.capital = (cap!=null)? Math.round(cap) : undefined;
+    r.netcap = (cap && cap>0)? +(net/cap).toFixed(1) : undefined;   // cumulative ×over period
+    r._capkind = e.capital_kind;
+  });
+  const el=document.getElementById('lotsIn'); if(el)el.value=N;
+  const li=document.getElementById('lotsInfo'); if(li)li.textContent=(N===1?'1 lot (backtest base)':N+' lots');
+}
+function setLots(v){ let n=Math.max(1,parseInt(v)||1); LOTS=n; try{localStorage.setItem('reg2_lots',String(n))}catch(e){} applyLots(); render(); }
+function bumpLots(d){ setLots(LOTS+d); }
+// ---------- ⭐ star + ☑ row-select (create filter views) ----------
+function toggleStar(e,id){e.stopPropagation(); if(STAR.has(id))STAR.delete(id);else STAR.add(id);
+  try{localStorage.setItem('reg2_stars',JSON.stringify([...STAR]))}catch(x){} render();}
+function rowSelToggle(e,id){e.stopPropagation(); if(SEL.has(id))SEL.delete(id);else SEL.add(id); renderSelBar(); render();}
+function toggleStarFilter(){showStar=!showStar; if(showStar)showSel=false; hlSpecial(); render();}
+function toggleSelView(){showSel=!showSel; if(showSel)showStar=false; hlSpecial(); render();}
+function rowSelClear(){SEL.clear(); showSel=false; renderSelBar(); render();}
+function selectAllVisible(){ ROWS.filter(pass).forEach(r=>SEL.add(r.id)); renderSelBar(); render(); }
+function renderSelBar(){ const b=document.getElementById('selbar'); if(!b)return;
+  if(SEL.size){b.style.display='inline-flex'; const n=document.getElementById('seln'); if(n)n.textContent=SEL.size;}
+  else{b.style.display='none'; showSel=false;} hlSpecial(); }
+function hlSpecial(){ const s=document.getElementById('starToggle'); if(s)s.classList.toggle('on',showStar);
+  const v=document.getElementById('selView'); if(v)v.classList.toggle('on',showSel); }
+
 async function load(){
-  const [a,b,c,d,e]=await Promise.allSettled([
+  const [a,b,c,d,e,f]=await Promise.allSettled([
     fetch('/api/strategy-registry',{cache:'no-store'}).then(r=>r.json()),
     fetch('/api/config',{cache:'no-store'}).then(r=>r.json()),
     fetch('/lab/runs/index.json',{cache:'no-store'}).then(r=>r.json()),
     fetch('/api/timer-status',{cache:'no-store'}).then(r=>r.json()),
-    fetch('/api/param-stability',{cache:'no-store'}).then(r=>r.json())]);
+    fetch('/api/param-stability',{cache:'no-store'}).then(r=>r.json()),
+    fetch('/api/registry-economics',{cache:'no-store'}).then(r=>r.json())]);
   if(a.status==='fulfilled'&&a.value)REG=a.value;
   if(b.status==='fulfilled'&&b.value)CFG=b.value||{};
   if(c.status==='fulfilled'&&Array.isArray(c.value)) c.value.forEach(r=>{ if(r&&r.slug)RUNS[String(r.slug).toLowerCase()]=r; });
   if(d.status==='fulfilled'&&d.value&&typeof d.value==='object')TIMERS=d.value;
   if(e.status==='fulfilled'&&e.value&&typeof e.value==='object'&&!e.value.error)STAB=e.value;
-  buildRows(); render();
+  if(f.status==='fulfilled'&&f.value&&f.value.econ){const o={};Object.keys(f.value.econ).forEach(k=>o[String(k).toLowerCase()]=f.value.econ[k]);ECON=o;}
+  buildRows(); applyLots(); render();
 }
 
 // ---------- deploy actions (reuses /api/start /api/stop /api/timer-deploy) ----------
@@ -555,6 +634,8 @@ document.addEventListener('keydown',e=>{if(e.altKey&&(e.key==='r'||e.key==='R'))
 
 // ---------- filtering + sorting ----------
 function pass(r){
+  if(showStar && !STAR.has(r.id)) return false;
+  if(showSel && !SEL.has(r.id)) return false;
   if(S.q){const q=S.q.toLowerCase(); if(!((r.id+' '+r.name+' '+r.config+' '+r.file).toLowerCase().includes(q))) return false;}
   for(const k in S.colf){const f=S.colf[k];const v=r[k];
     if(f==null||f==='') continue;
@@ -601,9 +682,9 @@ function fnum(v,dec,suf,cls){ if(v==null||v===''||isNaN(v))return dash();
   const c=cls?cls(+v):''; return `<span class="${c}">${(+v).toFixed(dec)}${suf||''}</span>`; }
 function cell(r,k){
   switch(k){
-    case '_idx':return `<span class="idx">${r._gidx||''}</span>`;
+    case '_idx':return `<input type="checkbox" class="rsel" title="Select row (build a filter view)" onclick="rowSelToggle(event,'${r.id}')" ${SEL.has(r.id)?'checked':''}><span class="idx">${r._gidx||''}</span>`;
     case 'id':return `<span class="id">${r.id}</span>`;
-    case 'name':return `<span class="name" title="${esc(r.name)}">${esc(r.name)}</span>`;
+    case 'name':return `<span class="star ${STAR.has(r.id)?'on':''}" title="Star / unstar (⭐ filter)" onclick="toggleStar(event,'${r.id}')">${STAR.has(r.id)?'★':'☆'}</span><span class="name" title="${esc(r.name)}">${esc(r.name)}</span>`;
     case 'verdict':{const cf=`title="Ctrl+click to filter" onclick="ctrlFilter(event,'verdict','${r.verdict}')"`;
         return r.verdict==='WINNER'?`<span class="vd win" ${cf}>🏆 WINNER</span>`:r.verdict==='weak'?`<span class="vd weak" ${cf}>⚠️ weak</span>`:`<span class="dash" style="cursor:pointer" ${cf}>—</span>`;}
     case 'status':{const now=liveNow(r._ck);
@@ -622,6 +703,13 @@ function cell(r,k){
     case 'win':return fnum(r.win,0,'%');
     case 'trades':return (r.trades!=null&&!isNaN(r.trades))?Number(r.trades).toLocaleString('en-IN'):dash();
     case 'pval':return (r.pval==null||isNaN(r.pval))?dash():(r.pval<0.05?`<span class="sig-pass">✅ ${(+r.pval).toFixed(3)}</span>`:`<span class="sig-fail">⚠️ ${(+r.pval).toFixed(3)}</span>`);
+    case 'capital':{if(r.capital==null)return dash();
+        const est=(r._capkind==='SELL'||r._capkind==='mixed')?'~':'';
+        const t=r._capkind==='SELL'?'~SPAN margin estimate':(r._capkind==='BUY'?'premium paid (debit)':'estimate');
+        return `<span style="color:#d29922;font-weight:600" title="Capital to run @ ${LOTS} lot(s) — ${t}">${est}₹${(r.capital).toLocaleString('en-IN')}</span>`;}
+    case 'net_rs':return (r.net_rs==null)?dash():`<span class="${r.net_rs>=0?'pos':'neg'}" title="Net P&L @ ${LOTS} lot(s) — charges recomputed (flat brokerage does NOT scale)">₹${(r.net_rs).toLocaleString('en-IN')}</span>`;
+    case 'tax_rs':return (r.tax_rs==null)?dash():`<span style="color:var(--mut)" title="Charges @ ${LOTS} lot(s): flat brokerage + turnover×lots">₹${(r.tax_rs).toLocaleString('en-IN')}</span>`;
+    case 'netcap':return (r.netcap==null)?dash():`<span class="${r.netcap>=0?'pos':'neg'}" title="Net ÷ Capital = cumulative multiple over the FULL backtest period (not per-year)">${r.netcap}×</span>`;
     case 'created':return r.created?`<span class="mono" style="color:var(--mut)">${r.created}</span>`:dash();
     case 'config':return r.config?`<span class="mono" style="color:var(--mut)">${esc(r.config)}</span>`:dash();
     case 'file':return r.file?`<span class="mono" style="color:var(--mut)">${esc(r.file)}</span>`:dash();
@@ -644,7 +732,7 @@ function cell(r,k){
     case 'maxtd':return r.maxtd!=null?`<span class="mono">${r.maxtd}</span>`:dash();
     case 'untouched':return _untouchedCell(r);
     case 'deploy':return deployCell(r);
-    case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html">Lab ↗</a>`:dash();
+    case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html" target="_blank" rel="noopener">Lab ↗</a>`:dash();
   }
   return '';
 }
@@ -668,7 +756,7 @@ function trow(r,vis,cls){return `<tr class="${isDep(r)?'dep':''} ${cls||''}">`+v
 function fzc(k){return k==='_idx'?'fz fz-idx':k==='id'?'fz fz-id':k==='name'?'fz fz-name':'';}
 
 function render(){
-  renderSaved();renderColsMenu();renderChips();
+  renderSaved();renderColsMenu();renderChips();hlSpecial();renderSelBar();
   S.q=document.getElementById('q').value;
   const vis = (VIEW!=='quick' && VIEWS[VIEW])
     ? VIEWS[VIEW].map(k=>COLS.find(c=>c.k===k)).filter(Boolean)

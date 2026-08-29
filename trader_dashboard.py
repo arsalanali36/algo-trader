@@ -9891,6 +9891,19 @@ def api_backtest_runs():
         return jsonify({'ok': False, 'runs': [], 'error': str(e)})
 
 
+@app.route('/api/registry-economics')
+def api_registry_economics():
+    """Per-run LOT-INDEPENDENT economics (gross_per_lot, flat_charge, per_lot_charge,
+    capital_per_lot, ...) so /registry2 can rescale Net/Tax/Capital/ROC to any lot count
+    client-side. Display-only; reuses registry_economics (backtest_calendar + charges)."""
+    try:
+        import registry_economics as re
+        return jsonify({'ok': True, 'econ': re.all_economics()})
+    except Exception as e:
+        print("[registry-economics] fail:", e, flush=True)
+        return jsonify({'ok': False, 'econ': {}, 'error': str(e)})
+
+
 @app.route('/api/backtest/calendar-summary')
 def api_backtest_calendar_summary():
     """Same {summary, trades, filters} shape as /api/orders/calendar-summary,

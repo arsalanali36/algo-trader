@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**146 modules documented** across 10 folders.
+**150 modules documented** across 10 folders.
 
 
 ## Folders
@@ -448,6 +448,11 @@ SINGLE SOURCE — Chain-Zone signal (user's "Ars_Auto_Rev_Chain").
 - 🔧 `chain_zone_signal_last` — Point-in-time chain-zone for the LIVE trader — signal for the last CLOSED bar.
 - 🔧 `chain_zone_signals` — Vectorised chain-zone long/short entry arrays — EXACT intraday_engine logic.
 - 🔧 `daily_levels` — date -> dict(res, sup, neutral). Levels from the PREVIOUS completed day (no lookahead).
+
+### `strategies/signals/m_pattern.py`
+m_pattern.py — SINGLE SOURCE of the "IV-pop -> M-rollover" signal (ADR-010 / Rule 6E).
+
+- 🔧 `detect` — First M-rollover of `series`. Returns (x_rollover, spike_ratio) or None.
 
 ### `strategies/signals/orb.py`
 SINGLE SOURCE OF TRUTH — ORB (opening-range breakout) signal.
@@ -1133,6 +1138,31 @@ lake_pull_to_pc.py — build the 1-min expired-option lake ON THE VPS (fresh tok
 - 🔧 `pull_one` — scp the underlying folder to the PC, verify, then delete from the VPS.
 - 🔧 `ssh` — …
 
+### `_ops/m_pattern_ironfly.py`
+m_pattern_ironfly.py — PURE state + decision for the IV-pop M-rollover IRON-FLY (02.18). No broker / order / Dhan import -> standalone-testable. Firing legs (execution_gateway), live LTP, the M-signal read (option_curves) and squareoff are the CALLER's job (m_pattern_ironfly_live).
+
+- 🔧 `add` — …
+- 🔧 `build_position` — …
+- 🔧 `check_exit` — …
+- 🔧 `fired_today` — …
+- 🔧 `get` — …
+- 🔧 `has_open` — …
+- 🔧 `hold_expired` — True once `max_hold_days` trading days have elapsed since entry_date (inclusive of
+- 🔧 `list_open` — …
+- 🔧 `mark_fired` — …
+- 🔧 `position_mtm` — …
+- 🔧 `set_status` — …
+- 🔧 `update` — …
+
+### `_ops/m_pattern_ironfly_live.py`
+m_pattern_ironfly_live.py — LIVE wiring for the IV-pop M-rollover IRON-FLY (02.18). Self-contained (keeps trader_dashboard.py thin). PAPER hard-locked, OFF by default.
+
+- 🔧 `cfg` — …
+- 🔧 `detect` — …
+- 🔧 `fire_ironfly` — Enter one iron-fly (HEDGE legs first -> never naked). Returns pos|None.
+- 🔧 `live_series` — [(hhmm, atm_combined_premium)] for today from the /curves collector. Zero extra Dhan.
+- 🔧 `mpfly_loop` — ~20s: M-rollover entry + 50%-credit target + (+max_hold_days) time-exit + expiry backstop.
+
 ### `_ops/morning_brief.py`
 morning_brief.py — subha ek-nazar market snapshot (display-only, Rule 10).
 
@@ -1282,6 +1312,12 @@ reconcile_csv.py — reconcile the app's LIVE ledger to an uploaded Zerodha trad
 - 🔧 `kite_to_trad_sym` — Kite F&O tradingsymbol → the app's trad_sym (ROOT-MonYYYY-STRIKE-CE/PE). Handles
 - 🔧 `parse_zerodha_tradebook` — Rows → [{trade_id,time,side,kite_sym,root,trad_sym,product,qty,price}]. Skips header /
 - 🔧 `plan` — READ-ONLY. Parse CSV → per-contract broker(CSV) net vs app net → what's out of sync.
+
+### `_ops/registry_economics.py`
+Registry economics — per-run lot-independent P&L / charge / capital model.
+
+- 🔧 `all_economics` — {slug: econ} for the given slugs (default: every run in runs/index.json).
+- 🔧 `economics` — Per-run economics (lot-independent), cached on results.js mtime. None if no run.
 
 ### `_ops/report_notes.py`
 report_notes.py — server-side observation notes for the Daily Report page.
@@ -1672,6 +1708,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_rate_limit_events` — Visibility into Dhan rate-limit throttling/429s — RMS Risk tab '🚦
 - 🔧 `api_reconcile_csv` — Upload a Zerodha tradebook CSV → reconcile the app's LIVE ledger to it. Default is a
 - 🔧 `api_reconcile_manual_trades` — Button-triggered (Completed Trades card): pulls today's real broker
+- 🔧 `api_registry_economics` — Per-run LOT-INDEPENDENT economics (gross_per_lot, flat_charge, per_lot_charge,
 - 🔧 `api_rename_strategy` — …
 - 🔧 `api_report_note_image` — …
 - 🔧 `api_report_notes` — …
