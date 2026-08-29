@@ -33,6 +33,84 @@ def _today_ist():
     return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
 
 
+_broker_occ_cache = {"ts": 0.0, "secs": None}
+
+
+def _broker_held_sec_ids(max_age=20):
+    """sec_ids the BROKER actually holds RIGHT NOW (any strategy, no attribution),
+    or None if it could not be read.
+
+    WHY THIS EXISTS (live blunder 2026-08-28, user-reported 08-29): the app-side
+    check below reads `order_store.trades_for(TODAY)` — it is DAY-SCOPED, so a
+    POSITIONAL leg opened on an earlier day is invisible to it. weekly_ironfly_v1
+    was holding a NIFTY 24550-CE wing bought on 08-26; on 08-28 this gate saw the
+    strike as free, straddle_alert_hedged bought the SAME contract, and Zerodha's
+    per-contract FIFO then consumed the iron-fly's older lot — booking its ₹5,281
+    loss two days early and leaving every per-strategy book disagreeing with the
+    broker for that day. The broker's own position book is the only view that
+    cannot miss a carried leg, so we ask it directly.
+
+    Kite-only (the executing broker; Dhan is data/manual-only here). Cached ~20s
+    so a 4-leg hedged entry costs ONE positions call, not four.
+    None on ANY failure — the caller must then fall back to the app-side check
+    alone (fail-open, never worse than before this function existed)."""
+    import time as _t
+    now = _t.time()
+    if _broker_occ_cache["secs"] is not None and now - _broker_occ_cache["ts"] < max_age:
+        return _broker_occ_cache["secs"]
+    try:
+        from brokers import kite_broker as _kb
+        b = _kb.KiteBroker()
+        k = b._get_kite()
+        secs = set()
+        for p in (b.positions_detailed() or []):
+            try:
+                if not int(p.get("qty") or 0):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            ks = str(p.get("kite_sym") or "")
+            if not ks:
+                continue
+            # REVERSE structured-field resolve (kite -> dhan sec_id). Never parse a
+            # formatted symbol string by hand (TRAP #13/#79).
+            try:
+                r = _kb.resolve_dhan_from_kite_symbol(k, ks)
+            except Exception:
+                r = None
+            if r and r[0]:
+                secs.add(str(r[0]))
+        _broker_occ_cache.update(ts=now, secs=secs)
+        return secs
+    except Exception:
+        return None
+
+
+def _own_open_sec_ids(strategy, lookback_days=90):
+    """sec_ids of `strategy`'s OWN still-open legs, netted across days.
+
+    The broker book carries no strategy attribution, so without this a strategy
+    would see its OWN carried position as a foreign occupant and pointlessly
+    shift (or abort) a leg it is entitled to. Empty set on failure — which is the
+    SAFE direction here: it can only make the gate stricter, never looser."""
+    own = set()
+    try:
+        import order_store
+        from datetime import datetime as _dt
+        today = _today_ist()
+        frm = (_dt.strptime(today, "%Y-%m-%d") - timedelta(days=int(lookback_days))).strftime("%Y-%m-%d")
+        rng = order_store.trades_for_range(frm, today, mode="live")
+        for leg in (rng.get("open") or []):
+            if (leg.get("strategy") or "") != (strategy or ""):
+                continue
+            sid = str(leg.get("sec_id") or "")
+            if sid:
+                own.add(sid)
+    except Exception:
+        return set()
+    return own
+
+
 def occupied_sec_ids(exclude_strategy="", live_only=True):
     """sec_ids currently OPEN at the broker for any strategy OTHER than
     `exclude_strategy` (today's order_store; CAPITAL_BLOCKED / zero-qty excluded).
@@ -65,7 +143,18 @@ def occupied_sec_ids(exclude_strategy="", live_only=True):
             if sid:
                 out.add(sid)
     except Exception:
-        return set()
+        out = set()   # app-side view unusable — the broker view below still applies
+
+    # ── Broker-held contracts (the ONLY view that sees a POSITIONAL leg) ──────
+    # The block above is day-scoped and therefore blind to a leg carried in from
+    # an earlier day (see _broker_held_sec_ids for the live blunder this cost).
+    # Subtract the caller's OWN open legs: the broker book has no strategy
+    # attribution, so without that a strategy would treat its own carried
+    # position as a foreign occupant. Broker unreadable -> None -> unchanged
+    # behaviour (fail-open, exactly as before).
+    held = _broker_held_sec_ids()
+    if held:
+        out |= (held - _own_open_sec_ids(exclude_strategy))
     return out
 
 
