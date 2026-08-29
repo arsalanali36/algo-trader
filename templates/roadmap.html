@@ -14,6 +14,7 @@
   --gold:#d9a441; --gold-soft:#7a5f28; --gold-bg:#241d0f;
   --up:#3fb950; --up-soft:#1e3a27; --down:#f0546a; --down-soft:#3f2129;
   --agg:#d9a441; --agg-band:#d9a4412e; --calm:#4bb8c0; --calm-band:#4bb8c02b;
+  --proj:#a37ff7; --proj-band:#a37ff72e; --proj-band2:#a37ff755;
   --grid:#20262f; --shadow:0 1px 2px rgba(0,0,0,.4),0 12px 34px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box}
@@ -23,14 +24,158 @@ body{margin:0;background:var(--ground);color:var(--ink);
 h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0;letter-spacing:-.015em;text-wrap:balance}
 .wrap{max-width:1040px;margin:0 auto;padding:22px clamp(14px,4vw,28px) 80px}
 .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);font-weight:600}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 
-.head{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;margin:6px 0 18px}
+.head{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;margin:6px 0 14px}
 .head h1{font-size:clamp(1.5rem,4vw,2.1rem);font-weight:800}
 .picker{display:flex;align-items:center;gap:8px}
-.picker select{font-family:inherit;font-size:.9rem;font-weight:600;background:var(--surface);color:var(--ink);
+.picker select,.picker input{font-family:inherit;font-size:.9rem;font-weight:600;background:var(--surface);color:var(--ink);
   border:1px solid var(--border);border-radius:9px;padding:8px 12px;cursor:pointer}
+.planchip{font-family:"IBM Plex Mono",monospace;font-size:.76rem;padding:5px 11px;border-radius:8px;
+  border:1px solid var(--up-soft);background:var(--up-soft);color:var(--up);white-space:nowrap}
+.planchip.none{border-color:var(--border);background:var(--surface);color:var(--faint)}
 
-/* status banner */
+/* tabs */
+.tabbar{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap}
+.tabbar button{font-family:"Bricolage Grotesque",sans-serif;font-size:1rem;font-weight:700;padding:10px 18px;border:0;
+  background:none;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabbar button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--gold)}
+.panel[hidden]{display:none}
+
+/* controls */
+.ctl{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.ctl>div{display:flex;flex-direction:column;gap:6px}
+.clbl{font-family:"IBM Plex Mono",monospace;font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.seg{display:flex;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.seg button{font-family:"IBM Plex Mono",monospace;font-size:.78rem;padding:8px 13px;border:0;background:var(--surface);
+  color:var(--muted);cursor:pointer;border-right:1px solid var(--border)}
+.seg button:last-child{border-right:0}
+.seg button[data-on]{background:var(--gold-bg);color:var(--gold);box-shadow:inset 0 -2px 0 var(--gold)}
+.seg.money button[data-on]{background:var(--up-soft);color:var(--up);box-shadow:inset 0 -2px 0 var(--up)}
+
+/* hero */
+.hero{border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:20px 22px;margin-bottom:14px;box-shadow:var(--shadow)}
+.hero .q{color:var(--muted);font-size:.92rem;margin-bottom:10px}
+.hero .q b{color:var(--ink)}
+.hero .big{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:clamp(2rem,7vw,2.9rem);line-height:1;color:var(--proj)}
+.hero .band{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:9px}
+.hero .band .rng{font-family:"IBM Plex Mono",monospace;font-size:1rem}
+.pbar{height:24px;border-radius:6px;overflow:hidden;display:flex;border:1px solid var(--border);margin-top:15px}
+.pbar span{display:block}
+.pbar .lose{background:repeating-linear-gradient(45deg,#f0546a33,#f0546a33 5px,#f0546a1a 5px,#f0546a1a 10px)}
+.pbar .lo{background:var(--proj-band)} .pbar .mid{background:var(--proj-band2)} .pbar .hi{background:var(--proj-band)}
+.pticks{display:flex;justify-content:space-between;font-family:"IBM Plex Mono",monospace;font-size:.68rem;color:var(--faint);margin-top:5px;gap:8px;flex-wrap:wrap}
+.finel{margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);display:flex;gap:22px;flex-wrap:wrap;font-size:.84rem;color:var(--muted)}
+.finel b{font-family:"IBM Plex Mono",monospace;color:var(--ink);font-weight:500}
+
+/* lanes */
+.lanes{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-bottom:16px}
+.lane{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px 18px}
+.lane.real{border-color:var(--up-soft);border-left:3px solid var(--up)}
+.lane h3{font-size:.95rem;font-weight:700;display:flex;align-items:center;gap:8px}
+.lane .sub{font-family:"IBM Plex Mono",monospace;font-size:.76rem;color:var(--muted)}
+.lane .amt{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:1.7rem;margin:8px 0 2px;color:var(--proj)}
+.lane .note{font-size:.78rem;color:var(--faint);margin-top:9px;padding-top:9px;border-top:1px solid var(--border-2)}
+
+/* generic card */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);margin-bottom:16px}
+.card>header{display:flex;gap:10px;align-items:baseline;padding:14px 18px;border-bottom:1px solid var(--border-2);flex-wrap:wrap}
+.card>header h3{font-size:1rem;font-weight:700}
+.card .body{padding:16px 18px}
+.sp{flex:1}
+h2.sec{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--faint);font-weight:600;margin:28px 0 12px}
+
+/* tables */
+.tw{overflow-x:auto}
+table.t{width:100%;min-width:720px;border-collapse:collapse;font-size:.86rem}
+table.t th,table.t td{padding:10px 11px;text-align:right;border-bottom:1px solid var(--border-2);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+table.t th:first-child,table.t td:first-child{text-align:left}
+table.t thead th{font-family:"IBM Plex Mono",monospace;font-size:.63rem;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--faint);font-weight:600}
+table.t tbody td{font-family:"IBM Plex Mono",monospace}
+table.t tbody tr:hover{background:#ffffff05}
+table.t tfoot td{border-top:1px solid var(--border);border-bottom:0;font-weight:700;color:var(--ink);padding-top:12px}
+.snm{font-family:"IBM Plex Sans",sans-serif;color:var(--ink)}
+.sid{color:var(--faint);font-size:.72rem}
+.why{font-family:"IBM Plex Sans",sans-serif;font-size:.78rem;color:var(--muted);white-space:normal;min-width:180px}
+.pill{font-family:"IBM Plex Mono",monospace;font-size:.6rem;letter-spacing:.06em;padding:2px 6px;border-radius:4px;
+  border:1px solid;text-transform:uppercase;white-space:nowrap}
+.p-real{color:var(--up);border-color:var(--up-soft);background:var(--up-soft)}
+.p-paper{color:var(--calm);border-color:#2b4a4d;background:#152628}
+.p-bad{color:var(--down);border-color:var(--down-soft);background:var(--down-soft)}
+.p-gold{color:var(--gold);border-color:var(--gold-soft);background:var(--gold-bg)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.trk{display:inline-flex;align-items:center;gap:6px}
+
+/* trust */
+.trust{border:1px solid var(--gold-soft);background:var(--gold-bg);border-radius:14px;padding:15px 18px;margin-bottom:16px}
+.trust h3{font-size:.92rem;color:var(--gold);margin-bottom:9px}
+.trust ul{margin:0;padding-left:17px}
+.trust li{font-size:.84rem;color:var(--muted);margin-bottom:7px}
+.trust li b{color:var(--ink);font-weight:600}
+
+/* goal planner */
+.goalin{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;padding-bottom:15px;
+  border-bottom:1px solid var(--border-2);margin-bottom:15px}
+.goalin>div{display:flex;flex-direction:column;gap:6px}
+.goalin input,.goalin select{font-family:"IBM Plex Mono",monospace;font-size:.9rem;background:var(--ground);
+  color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:9px 12px;min-width:135px}
+button.go{font-family:"Bricolage Grotesque",sans-serif;font-size:.92rem;font-weight:700;padding:10px 20px;border-radius:9px;
+  border:1px solid var(--gold-soft);background:var(--gold-bg);color:var(--gold);cursor:pointer}
+button.go:hover{background:#31280f}
+.verdict{border:1px solid var(--border);border-radius:13px;padding:16px 18px;background:var(--surface-2)}
+.verdict.ok{border-color:var(--up-soft);border-left:3px solid var(--up)}
+.verdict.no{border-color:var(--down-soft);border-left:3px solid var(--down)}
+.vhead{font-size:.95rem;display:flex;gap:9px;align-items:center;flex-wrap:wrap;padding-bottom:13px;
+  border-bottom:1px dashed var(--border);margin-bottom:13px;color:var(--muted)}
+.vhead b{color:var(--ink)}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:14px}
+.vnum{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:1.3rem;margin-top:3px;line-height:1.15}
+.vsub{font-size:.7rem;color:var(--faint);margin-top:2px}
+.scg{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:11px;margin-top:16px}
+.sc{border:1px solid var(--border);border-radius:11px;background:var(--ground);padding:13px 15px;cursor:pointer}
+.sc.on{border-color:var(--gold);background:var(--gold-bg)}
+.sc h5{font-family:"Bricolage Grotesque",sans-serif;margin:0 0 8px;font-size:.9rem;font-weight:700;
+  display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border-2);font-size:.78rem;color:var(--muted)}
+.kv:last-child{border-bottom:0}
+.kv span:last-child{font-family:"IBM Plex Mono",monospace;color:var(--ink)}
+.rule{margin-top:16px;padding:12px 15px;border-left:3px solid var(--gold);background:var(--gold-bg);
+  border-radius:0 9px 9px 0;font-size:.83rem;color:var(--muted)}
+.rule b{color:var(--ink)} .rule u{color:var(--gold);text-decoration:none;font-weight:600}
+
+/* apply */
+.apply{border:1px solid var(--gold-soft);border-radius:15px;background:var(--surface);margin-bottom:18px;overflow:hidden}
+.apply>header{display:flex;gap:10px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border-2);flex-wrap:wrap}
+.chg .old{color:var(--faint);text-decoration:line-through;margin-right:6px}
+.chg .new{color:var(--gold);font-weight:700}
+.rails{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}
+.rail{display:flex;gap:9px;font-size:.8rem;color:var(--muted);border:1px solid var(--border);border-radius:9px;
+  padding:10px 12px;background:var(--ground);line-height:1.45}
+.rail b{color:var(--ink)} .rail.no{border-color:var(--down-soft)}
+.confirm{margin-top:16px;padding-top:14px;border-top:1px solid var(--border-2);display:flex;gap:11px;align-items:center;flex-wrap:wrap}
+.confirm input{font-family:"IBM Plex Mono",monospace;font-size:.86rem;border:1px solid var(--down);background:#1a1113;
+  color:var(--ink);border-radius:8px;padding:9px 13px;min-width:190px}
+button.applybtn{font-family:"Bricolage Grotesque",sans-serif;font-size:.92rem;font-weight:700;padding:10px 20px;border-radius:9px;
+  border:1px solid var(--up);background:var(--up-soft);color:var(--up);cursor:pointer}
+button.ghost{font-family:inherit;font-size:.82rem;padding:9px 14px;border-radius:8px;border:1px solid var(--border);
+  background:none;color:var(--muted);cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.applied{border:1px solid var(--up-soft);background:var(--up-soft);border-radius:10px;padding:11px 14px;
+  font-size:.82rem;color:var(--muted);margin-top:14px}
+.applied b{color:var(--ink)}
+
+/* daily log */
+.today{border:1px solid var(--border);border-radius:13px;padding:16px 18px;margin-bottom:15px;background:var(--surface-2)}
+.today.smooth{border-left:3px solid var(--up)} .today.behind{border-left:3px solid var(--gold)}
+.today.alert{border-left:3px solid var(--down)}
+.tbig{display:flex;gap:9px;align-items:center;font-size:1.05rem;font-weight:700;padding-bottom:13px;
+  border-bottom:1px dashed var(--border);margin-bottom:13px;font-family:"Bricolage Grotesque",sans-serif}
+.tgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px}
+
+/* existing per-strategy view */
 .banner{border-radius:16px;padding:20px 22px;margin-bottom:16px;box-shadow:var(--shadow);border:1px solid var(--border);
   display:flex;gap:18px;align-items:flex-start;background:var(--surface)}
 .banner .bicon{font-size:2rem;line-height:1;flex:none}
@@ -45,31 +190,23 @@ h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0;letter-
 .b-ontrack .act,.b-ahead .act{background:var(--up-soft);color:var(--up)}
 .b-behind .act{background:var(--gold-bg);color:var(--gold)}
 .b-alert .act{background:var(--down-soft);color:var(--down)}
-
-/* stat strip */
 .strip{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px}
 .st{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px}
 .st .v{font-family:"Bricolage Grotesque",sans-serif;font-weight:700;font-size:1.4rem;line-height:1}
 .st .l{font-size:.68rem;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
 .pos{color:var(--up)} .neg{color:var(--down)}
-
-/* action cards */
 .acts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
 .acard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:17px 18px;box-shadow:var(--shadow)}
 .acard h3{font-size:1rem;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .acard p{margin:0;color:var(--muted);font-size:.9rem}
 .acard .big{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:1.25rem;margin:4px 0 2px}
-
-/* chart */
 .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 16px 6px;box-shadow:var(--shadow);margin-bottom:16px}
 .chart-card h3{font-size:1rem;margin-bottom:4px}
 .chart-legend{display:flex;flex-wrap:wrap;gap:15px;margin:4px 2px 8px;font-size:.76rem;color:var(--muted)}
 .chart-legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:15px;height:9px;border-radius:2px;display:inline-block}
 .sw.line{height:0;border-top:2px solid;width:17px}
-#chart{width:100%;height:auto;display:block;overflow:visible}
-
-/* milestone table */
+#chart,#fan{width:100%;height:auto;display:block;overflow:visible}
 .mtbl-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px 4px}
 .mtbl{width:100%;min-width:560px;border-collapse:collapse;font-size:.9rem}
 .mtbl th,.mtbl td{padding:11px 14px;text-align:right;border-bottom:1px solid var(--border-2);font-variant-numeric:tabular-nums}
@@ -84,8 +221,9 @@ h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0;letter-
 .cav{background:var(--gold-bg);border:1px solid var(--gold-soft);border-left:3px solid var(--gold);
   border-radius:12px;padding:12px 15px;margin-bottom:16px;font-size:.88rem;color:var(--ink)}
 .cav b{color:var(--gold)}
+.load{color:var(--muted);font-size:.9rem;padding:10px 0}
 
-@media (max-width:820px){ .strip{grid-template-columns:repeat(3,1fr)} .acts{grid-template-columns:1fr} }
+@media (max-width:820px){ .strip{grid-template-columns:repeat(3,1fr)} .acts,.lanes,.rails{grid-template-columns:1fr} }
 @media (max-width:520px){ .strip{grid-template-columns:repeat(2,1fr)} }
 </style>
 </head>
@@ -94,56 +232,515 @@ h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0;letter-
   <div class="head">
     <div>
       <div class="eyebrow">Live Growth Roadmap · auto-tracked</div>
-      <h1 id="ttl">Roadmap</h1>
+      <h1>Roadmap</h1>
     </div>
-    <div class="picker">
+    <div id="planChip" class="planchip none">koi active plan nahi</div>
+  </div>
+
+  <div class="tabbar" role="tablist">
+    <button role="tab" aria-selected="true"  onclick="pickTab(0)">🚀 Growth Roadmap</button>
+    <button role="tab" aria-selected="false" onclick="pickTab(1)">🎯 Goal Planner</button>
+  </div>
+
+  <!-- ══════════════ TAB 1 ══════════════ -->
+  <section class="panel" id="tab0">
+    <div class="ctl">
+      <div><span class="clbl">Kaunsa paisa</span>
+        <div class="seg money" id="segLane">
+          <button data-v="real">💰 Real money</button>
+          <button data-v="all" data-on>🧪 Real + Paper</button>
+        </div></div>
+      <div><span class="clbl">Kab tak</span>
+        <div class="seg" id="segHz">
+          <button data-v="18">~2 hafte</button>
+          <button data-v="32" data-on>~1 mahina</button>
+          <button data-v="92">3 mahine</button>
+          <button data-v="365">1 saal</button>
+        </div></div>
+      <div><span class="clbl">Tarikh</span>
+        <div class="picker"><input type="date" id="toDate" onchange="onDateChange()"></div></div>
+      <div><span class="clbl">Lots</span>
+        <div class="seg" id="segLots">
+          <button data-v="live" data-on>Abhi ke</button>
+          <button data-v="plan">Active plan</button>
+        </div></div>
+    </div>
+
+    <div id="pfBox"><p class="load">Portfolio load ho raha hai…</p></div>
+
+    <h2 class="sec">📋 Roz ka log — sab smooth chal raha hai ya nahi</h2>
+    <div id="dailyBox"><p class="load">Daily log load ho raha hai…</p></div>
+
+    <h2 class="sec">🔬 Ek strategy ki detail</h2>
+    <div class="picker" style="margin-bottom:14px">
       <label class="mono" style="font-size:.72rem;color:var(--muted)">STRATEGY</label>
       <select id="stratSel" onchange="loadRoadmap(this.value)"></select>
     </div>
-  </div>
+    <div id="content"><p class="load">Loading…</p></div>
+    <div class="foot" id="foot"></div>
+  </section>
 
-  <div id="content"><p style="color:var(--muted)">Loading…</p></div>
-
-  <div class="foot" id="foot"></div>
+  <!-- ══════════════ TAB 2 ══════════════ -->
+  <section class="panel" id="tab1" hidden>
+    <div class="card">
+      <header><h3>“Mujhe itna chahiye — kya lagega?”</h3><div class="sp"></div>
+        <span class="clbl">set &amp; forget basket banata hai</span></header>
+      <div class="body">
+        <div class="goalin">
+          <div><span class="clbl">Mujhe chahiye ₹</span><input id="gTarget" type="number" value="30000" step="1000"></div>
+          <div><span class="clbl">Kab tak</span><input id="gDate" type="date"></div>
+          <div><span class="clbl">Max drawdown ₹</span><input id="gDD" type="number" value="60000" step="5000"></div>
+          <div><span class="clbl">Kaunsi strategies</span>
+            <select id="gScope"><option value="all">Real + Paper</option><option value="real">Sirf real-money</option></select></div>
+          <div class="sp"></div>
+          <button class="go" onclick="solveGoal()">Basket banao →</button>
+        </div>
+        <div id="goalBox"><p class="load">Target aur date bhar ke “Basket banao” dabaiye.</p></div>
+      </div>
+    </div>
+    <div id="applyBox"></div>
+  </section>
 </div>
 
 <script src="{{ url_for('static', filename='js/env-badge.js') }}"></script>
 <script src="{{ url_for('static', filename='js/topnav.js') }}"></script>
 <script>
-const L = "₹";
 const fmtL = v => "₹" + Number(v).toFixed(Math.abs(v)>=100?0:1) + "L";
-const fmtR = v => "₹" + Math.round(v).toLocaleString('en-IN');
+const fmtR = v => (v<0?"−₹":"₹") + Math.abs(Math.round(v)).toLocaleString('en-IN');
+const sgn   = v => (v>=0?"+":"−") + "₹" + Math.abs(Math.round(v)).toLocaleString('en-IN');
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const MONTHS = 24, DPM = 30.44;
+let RD=null, PF=null, GOAL=null, PLAN=null, SCEN=null, CURSCEN='balanced';
 
-let RD = null;
+function pickTab(i){
+  document.querySelectorAll('.tabbar button').forEach((b,n)=>b.setAttribute('aria-selected', n===i?'true':'false'));
+  document.getElementById('tab0').hidden = i!==0;
+  document.getElementById('tab1').hidden = i!==1;
+  if(i===1 && !GOAL && !SCEN) solveGoal();
+  window.scrollTo({top:0});
+}
+function addDays(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function segPick(id, v, cb){
+  document.querySelectorAll('#'+id+' button').forEach(b=>{
+    if(b.dataset.v===String(v)) b.setAttribute('data-on',''); else b.removeAttribute('data-on');
+  });
+  if(cb) cb(v);
+}
+function segWire(id, cb){
+  document.querySelectorAll('#'+id+' button').forEach(b=>b.onclick=()=>{ segPick(id,b.dataset.v); cb(b.dataset.v); });
+}
 
-async function boot(){
+/* ══════════════ PORTFOLIO ══════════════ */
+let LANE='all', LOTSMODE='live';
+function onDateChange(){ loadPortfolio(); }
+
+async function loadPortfolio(){
+  const to = document.getElementById('toDate').value;
+  document.getElementById('pfBox').innerHTML = '<p class="load">Calculating…</p>';
   try{
-    const r = await fetch('/api/roadmap');
+    const r = await fetch(`/api/roadmap/portfolio?to=${to}&lane=${LANE}&lots_mode=${LOTSMODE}`);
     const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'fail');
+    PF = j.data; renderPortfolio(PF);
+  }catch(e){ document.getElementById('pfBox').innerHTML = `<div class="err">Portfolio load fail: ${esc(e.message||e)}</div>`; }
+}
+
+function renderPortfolio(d){
+  const lane = d.lanes[LANE] || d.lanes.all;
+  const other = LANE==='real' ? d.lanes.all : d.lanes.real;
+  if(!lane){
+    document.getElementById('pfBox').innerHTML =
+      `<div class="err">Is lane me koi strategy nahi (lots 0 ya sab blocked). Lots set kijiye ya "Real + Paper" dekhiye.</div>`;
+    return;
+  }
+  const dd = new Date(d.to_date+'T00:00:00').toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+  const tot = lane.p95 - lane.p5 || 1;
+  const w = v => Math.max(2, Math.round(100*v/tot));
+  const negW = lane.p5<0 ? w(Math.min(0,lane.p25)-lane.p5) : 2;
+
+  let html = `
+  <div class="hero">
+    <div class="q">Aaj se <b>${dd}</b> tak (${d.n_days} trading din) — <b>${LANE==='real'?'Real money':'Real + Paper'}</b> lane,
+      ${LOTSMODE==='plan'?'active plan':'abhi ke'} lots pe</div>
+    <div class="big">${sgn(lane.p50)}</div>
+    <div class="band"><span class="clbl">Likely range</span>
+      <span class="rng">${sgn(lane.p25)} <span style="color:var(--muted)">se</span> ${sgn(lane.p75)}</span>
+      <span style="color:var(--muted);font-size:.82rem">(50% cases isi ke andar)</span></div>
+    <div class="pbar">
+      <span class="lose" style="width:${negW}%"></span><span class="lo" style="width:${w(lane.p50-Math.max(lane.p25,lane.p5))}%"></span>
+      <span class="mid" style="width:${w(lane.p75-lane.p50)}%"></span><span class="hi" style="width:${w(lane.p95-lane.p75)}%"></span>
+    </div>
+    <div class="pticks">
+      <span>bura (1-in-20): ${sgn(lane.p5)}</span>
+      <span>median ${sgn(lane.p50)}</span>
+      <span>accha (1-in-20): ${sgn(lane.p95)}</span>
+    </div>
+    <div class="finel">
+      <span>Nuksan ka chance <b style="color:${lane.p_loss>40?'var(--down)':'var(--ink)'}">${lane.p_loss}%</b></span>
+      <span>Bura drawdown (1-in-20) <b style="color:var(--down)">${fmtR(-(lane.maxdd_p95||0))}</b></span>
+      <span>Book <b>${fmtR(d.book[LANE]||0)}</b></span>
+      <span>Strategies <b>${(lane.members||[]).length}</b></span>
+    </div>
+  </div>
+
+  <div class="lanes">
+    <div class="lane real"><h3><span class="dot" style="background:var(--up)"></span> Real money</h3>
+      <div class="sub">${d.lanes.real?(d.lanes.real.members||[]).length:0} strategy · book ${fmtR(d.book.real||0)}</div>
+      <div class="amt">${d.lanes.real?sgn(d.lanes.real.p50):'—'}</div>
+      <div class="sub">${d.lanes.real?`band ${sgn(d.lanes.real.p25)} … ${sgn(d.lanes.real.p75)}`:'koi live strategy nahi'}</div>
+      <div class="note">Investor ko bina asterisk ke yahi number bola ja sakta hai.</div></div>
+    <div class="lane"><h3><span class="dot" style="background:var(--calm)"></span> Real + Paper</h3>
+      <div class="sub">${d.lanes.all?(d.lanes.all.members||[]).length:0} strategy · book ${fmtR(d.book.all||0)}</div>
+      <div class="amt">${d.lanes.all?sgn(d.lanes.all.p50):'—'}</div>
+      <div class="sub">${d.lanes.all?`band ${sgn(d.lanes.all.p25)} … ${sgn(d.lanes.all.p75)}`:'—'}</div>
+      <div class="note">Paper P&amp;L me broker rejection / slippage modelled nahi — potential hai, promise nahi.</div></div>
+  </div>
+
+  <div class="chart-card">
+    <h3>Aage ka safar — din-ba-din corridor</h3>
+    <div class="chart-legend">
+      <span><i class="sw line" style="border-color:var(--proj)"></i> Median</span>
+      <span><i class="sw" style="background:var(--proj-band2)"></i> Likely (25–75%)</span>
+      <span><i class="sw" style="background:var(--proj-band)"></i> Bad/good luck (5–95%)</span>
+      <span><i class="sw line" style="border-color:var(--muted);border-top-style:dashed"></i> Zero line</span>
+    </div>
+    <svg id="fan" viewBox="0 0 900 320" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+
+  <div class="card"><header><h3>Har strategy — apne path pe hai ya nahi</h3><div class="sp"></div>
+    <span class="clbl">${dd} tak</span></header>
+    <div class="tw"><table class="t">
+      <thead><tr><th>Strategy</th><th>Kya</th><th>Lots</th><th>Book</th><th>Abhi tak</th>
+        <th>Median</th><th>Likely range</th><th>Loss chance</th><th>Bharosa</th></tr></thead>
+      <tbody>${d.rows.map(r=>rowHtml(r)).join('')}</tbody>
+      <tfoot><tr><td>Portfolio (${(lane.members||[]).length})</td><td></td>
+        <td>${(lane.members||[]).reduce((a,m)=>a+m.lots,0)}</td><td>${fmtR(d.book[LANE]||0)}</td><td></td>
+        <td style="color:var(--proj)">${sgn(lane.p50)}</td>
+        <td style="color:var(--muted)">${sgn(lane.p25)} … ${sgn(lane.p75)}</td>
+        <td style="color:var(--muted)">${lane.p_loss}%</td>
+        <td class="why">correlation-adjusted (medians ka simple jod ${sgn(lane.sum_of_medians)} hota)</td></tr></tfoot>
+    </table></div></div>
+
+  <div class="trust"><h3>⚠ Ye number kis-kis cheez pe tika hai</h3><ul>
+    ${d.caveats.map(c=>`<li>${esc(c)}</li>`).join('')}
+    <li><b>Capacity modelled nahi</b> — bade lots pe asli fill/slippage kharab ho sakti hai; lot cap ek guess hai, naapa hua number nahi.</li>
+    <li><b>Chhoti window = zyada randomness.</b> ${d.n_days} trading din me kuch hi trades aate hain — ek trade poora number palat sakta hai.</li>
+  </ul></div>`;
+  document.getElementById('pfBox').innerHTML = html;
+  drawFan(lane);
+}
+
+function rowHtml(r){
+  const p = r.proj, act = r.actual;
+  const pill = r.blocked ? '<span class="pill p-bad">Blocked</span>'
+    : (r.mode==='live' ? '<span class="pill p-real">Real</span>' : '<span class="pill p-paper">Paper</span>');
+  let path = '<span class="trk" style="color:var(--faint)">—</span>';
+  if(r.blocked) path = '<span class="trk"><span class="dot" style="background:var(--down)"></span>Projection off</span>';
+  else if(act && p){
+    const on = act.net >= (p.p25||0)*0.0 ; // actual vs its own corridor aata hai daily log me
+    path = `<span class="trk"><span class="dot" style="background:${act.net>=0?'var(--up)':'var(--gold)'}"></span>${act.trades} trades</span>`;
+  }
+  return `<tr${r.blocked?' style="opacity:.6"':''}>
+    <td><span class="sid">${esc(r.id)}</span><br><span class="snm">${esc(r.label)}</span></td>
+    <td>${pill}</td><td>${r.lots||'—'}</td><td>${r.book?fmtR(r.book):'—'}</td>
+    <td class="${act&&act.net>=0?'pos':(act?'neg':'')}">${act?sgn(act.net):'—'}</td>
+    <td style="color:var(--proj)">${p?sgn(p.p50):(r.blocked?'n/a':'—')}</td>
+    <td style="color:var(--muted)">${p?`${sgn(p.p25)} … ${sgn(p.p75)}`:'—'}</td>
+    <td style="color:var(--muted)">${p?p.p_loss+'%':'—'}</td>
+    <td class="why">${r.blocked?esc(r.blocked.slice(0,90))+'…':(r.backtest?`${r.backtest.trades} trades · ${r.backtest.window[0]}→${r.backtest.window[1]}`:'—')}</td>
+  </tr>`;
+}
+
+function drawFan(lane){
+  const svg = document.getElementById('fan'); if(!svg||!lane.curve) return;
+  const c = lane.curve, n = c.p50.length;
+  const W=900,H=320,ml=64,mr=16,mt=16,mb=28,iw=W-ml-mr,ih=H-mt-mb;
+  const lo = Math.min(0, ...c.p5), hi = Math.max(0, ...c.p95);
+  const x = i => ml + (n<2?0:(i/(n-1))*iw);
+  const y = v => mt + ih - ((v-lo)/((hi-lo)||1))*ih;
+  const grid=css('--grid'), faint=css('--faint'), muted=css('--muted'), proj=css('--proj');
+  const path=a=>a.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
+  const band=(a,b)=>{let s='M';b.forEach((v,i)=>s+=x(i).toFixed(1)+','+y(v).toFixed(1)+' L');
+    for(let i=a.length-1;i>=0;i--)s+=x(i).toFixed(1)+','+y(a[i]).toFixed(1)+' L';return s.replace(/L$/,'')+'Z';};
+  let g='';
+  const step = Math.max(1, Math.round((hi-lo)/4/1000)*1000);
+  for(let v=Math.ceil(lo/step)*step; v<=hi; v+=step){
+    g+=`<line x1="${ml}" y1="${y(v)}" x2="${W-mr}" y2="${y(v)}" stroke="${grid}"/>`;
+    g+=`<text x="${ml-8}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="${faint}" font-family="IBM Plex Mono">${fmtR(v)}</text>`;
+  }
+  g+=`<line x1="${ml}" y1="${y(0)}" x2="${W-mr}" y2="${y(0)}" stroke="${muted}" stroke-dasharray="3 3" opacity=".6"/>`;
+  g+=`<path d="${band(c.p5,c.p95)}" fill="${css('--proj-band')}"/>`;
+  g+=`<path d="${band(c.p25,c.p75)}" fill="${css('--proj-band2')}" opacity=".7"/>`;
+  g+=`<path d="${path(c.p50)}" fill="none" stroke="${proj}" stroke-width="2.4"/>`;
+  g+=`<circle cx="${x(n-1)}" cy="${y(c.p50[n-1])}" r="4.5" fill="${proj}"/>`;
+  g+=`<text x="${x(n-1)-8}" y="${y(c.p50[n-1])-10}" text-anchor="end" font-size="12.5" font-weight="700" fill="${proj}" font-family="Bricolage Grotesque">${sgn(c.p50[n-1])}</text>`;
+  [0, Math.floor(n/2), n-1].forEach(i=>g+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="11" fill="${faint}" font-family="IBM Plex Mono">${i===0?'aaj':'din '+(i+1)}</text>`);
+  svg.innerHTML = g;
+}
+
+/* ══════════════ DAILY LOG ══════════════ */
+// NOTE: JS template-literal me dollar-brace ke turant baad ek aur curly likhoge to
+// Jinja usko apna expression samajh ke poora page 500 kar deti hai. Isliye inline
+// object-literal ki jagah ye chhota helper — naye code me bhi wo sequence mat likho.
+function statusColor(s){ return {smooth:'var(--up)',behind:'var(--gold)',alert:'var(--down)'}[s]||'var(--muted)'; }
+
+async function loadDaily(){
+  try{
+    const r = await fetch('/api/roadmap/daily'); const j = await r.json();
+    const box = document.getElementById('dailyBox');
+    if(!j.ok || !j.data || !j.data.ok){
+      box.innerHTML = `<div class="card"><div class="body" style="color:var(--muted);font-size:.88rem">
+        ${esc((j.data&&j.data.reason)||j.error||'daily log abhi nahi')}<br>
+        <span style="color:var(--faint)">Goal Planner tab se ek plan apply kijiye — uske agle din se ye log roz bharega.</span>
+      </div></div>`;
+      return;
+    }
+    renderDaily(j.data);
+  }catch(e){ document.getElementById('dailyBox').innerHTML = `<div class="err">Daily log fail: ${esc(e.message||e)}</div>`; }
+}
+
+function renderDaily(d){
+  const t = d.today;
+  const icon = {smooth:'🟢',behind:'🟡',alert:'🔴'}[t?t.status:'smooth'];
+  const lbl  = t?t.status_label:'—';
+  let html = `
+  <div class="today ${t?t.status:''}">
+    <div class="tbig">${icon} ${esc(lbl==='Smooth'?'Smooth chal raha hai':lbl)}</div>
+    <div class="tgrid">
+      <div><div class="clbl">Aaj expected tha</div><div class="vnum" style="color:var(--proj)">${t?sgn(t.expected):'—'}</div></div>
+      <div><div class="clbl">Aaj actual hua</div><div class="vnum ${t&&t.actual>=0?'pos':'neg'}">${t?sgn(t.actual):'—'}</div></div>
+      <div><div class="clbl">Plan-to-date expected</div><div class="vnum" style="color:var(--proj)">${t?sgn(t.cum_expected):'—'}</div></div>
+      <div><div class="clbl">Plan-to-date actual</div><div class="vnum ${t&&t.cum_actual>=0?'pos':'neg'}">${t?sgn(t.cum_actual):'—'}</div></div>
+      <div><div class="clbl">Corridor me kahan</div><div class="vnum">${t&&t.pctile!=null?t.pctile+'<span style="font-size:.8rem;color:var(--muted)">th %ile</span>':'—'}</div></div>
+      <div><div class="clbl">Goal pe rehne ka chance</div><div class="vnum">${d.p_goal_now!=null?d.p_goal_now+'%':'—'}</div></div>
+    </div>
+  </div>
+  <div class="card"><header><h3>Din-ba-din</h3><div class="sp"></div>
+    <span class="clbl">${esc(d.plan.name||'plan')} · ${d.days_done}/${d.horizon_days} din</span></header>
+  <div class="tw"><table class="t" style="min-width:660px">
+    <thead><tr><th>Din</th><th>Expected</th><th>Actual</th><th>Farq</th><th>Cum expected</th>
+      <th>Cum actual</th><th>Corridor</th><th>Status</th></tr></thead>
+    <tbody>${d.rows.map(r=>`<tr>
+      <td>${r.date}</td>
+      <td style="color:var(--proj)">${sgn(r.expected)}</td>
+      <td class="${r.actual>=0?'pos':'neg'}">${sgn(r.actual)}</td>
+      <td class="${r.diff>=0?'pos':'neg'}">${sgn(r.diff)}</td>
+      <td style="color:var(--proj)">${sgn(r.cum_expected)}</td>
+      <td class="${r.cum_actual>=0?'pos':'neg'}">${sgn(r.cum_actual)}</td>
+      <td>${r.pctile==null?'—':r.pctile+'%'}</td>
+      <td><span class="trk"><span class="dot" style="background:${ statusColor(r.status) }"></span>${esc(r.status_label)}</span></td>
+    </tr>`).join('')}</tbody>
+  </table></div>
+  <div class="body" style="padding-top:12px;color:var(--faint);font-size:.8rem">
+    🟢 Smooth = cum actual 25–75 percentile ke beech · 🟡 Peeche = median se neeche par p5 ke upar (normal bad-luck)
+    · 🔴 Alert = p5 se neeche ya 10 din lagatar 20th %ile se neeche — ye <b style="color:var(--muted)">“aur lot daalo”</b> nahi,
+    <b style="color:var(--muted)">engine re-validate karo</b> ka signal hai.
+  </div></div>`;
+  document.getElementById('dailyBox').innerHTML = html;
+}
+
+/* ══════════════ GOAL PLANNER ══════════════ */
+async function solveGoal(){
+  const body = {
+    target: +document.getElementById('gTarget').value || 0,
+    to_date: document.getElementById('gDate').value,
+    dd_budget: +document.getElementById('gDD').value || 0,
+    scope: document.getElementById('gScope').value,
+    scenarios: true
+  };
+  if(!body.to_date){ alert('Date chuniye'); return; }
+  document.getElementById('goalBox').innerHTML = '<p class="load">Basket ban raha hai… (bootstrap chal raha hai)</p>';
+  document.getElementById('applyBox').innerHTML = '';
+  try{
+    const r = await fetch('/api/roadmap/goal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'fail');
+    SCEN = j.scenarios; CURSCEN = 'balanced'; GOAL = SCEN[CURSCEN];
+    renderGoal();
+  }catch(e){ document.getElementById('goalBox').innerHTML = `<div class="err">Solve fail: ${esc(e.message||e)}</div>`; }
+}
+
+function pickScen(name){ CURSCEN=name; GOAL=SCEN[name]; renderGoal(); }
+
+function renderGoal(){
+  const g = GOAL, p = g.projection||{};
+  const okCls = g.total_lots===0 ? 'no' : (g.feasible?'ok':'no');
+  const dot = g.total_lots===0 ? 'var(--down)' : (g.feasible?'var(--up)':'var(--gold)');
+  let html = `
+  <div class="verdict ${okCls}">
+    <div class="vhead"><span class="dot" style="background:${dot}"></span><b>${esc(g.verdict)}</b></div>
+    <div class="vgrid">
+      <div><div class="clbl">Capital chahiye</div><div class="vnum">${fmtR(g.capital)}</div><div class="vsub">margin at work</div></div>
+      <div><div class="clbl">Expected (median)</div><div class="vnum" style="color:var(--proj)">${sgn(p.p50||0)}</div><div class="vsub">${g.n_days} trading din</div></div>
+      <div><div class="clbl">Goal hit chance</div><div class="vnum">${g.p_hit}%</div><div class="vsub">P(≥ ${fmtR(g.target)})</div></div>
+      <div><div class="clbl">Bura drawdown (1-in-20)</div><div class="vnum neg">${fmtR(-(g.maxdd_p95||0))}</div>
+        <div class="vsub">${g.maxdd_p95>g.dd_budget?'⚠ budget se bahar':'budget '+fmtR(g.dd_budget)+' ke andar ✓'}</div></div>
+      <div><div class="clbl">Nuksan ka chance</div><div class="vnum">${p.p_loss||0}%</div><div class="vsub">net negative</div></div>
+    </div>
+  </div>
+
+  <div class="tw" style="margin-top:15px"><table class="t">
+    <thead><tr><th>Basket</th><th>Kya</th><th>Abhi</th><th>Plan lots</th><th>Capital</th>
+      <th>Expected hissa</th><th>Bura hissa</th><th>Kyun itne</th></tr></thead>
+    <tbody>${(g.members||[]).map(m=>`<tr${m.lots?'':' style="opacity:.55"'}>
+      <td><span class="sid">${esc(m.id)}</span><br><span class="snm">${esc(m.label)}</span></td>
+      <td>${m.mode==='live'?'<span class="pill p-real">Real</span>':'<span class="pill p-paper">Paper</span>'}</td>
+      <td style="color:var(--faint)">${m.cur_lots}</td>
+      <td class="chg"><span class="new" ${m.lots?'':'style="color:var(--down)"'}>${m.lots}</span>${m.delta&&m.lots?` <span style="font-size:.7rem;color:${m.delta>0?'var(--up)':'var(--down)'}">${m.delta>0?'+':''}${m.delta}</span>`:''}</td>
+      <td>${m.lots?fmtR(m.capital):'—'}</td>
+      <td style="color:var(--proj)">${m.expected!=null?sgn(m.expected):'—'}</td>
+      <td class="neg">${m.worst_case!=null?sgn(m.worst_case):'—'}</td>
+      <td class="why">${m.lots?`${m.trades} backtest trades · cap ${fmtR(m.capital_cap_rs)}`:esc(m.dropped_reason||'')}</td>
+    </tr>`).join('')}</tbody>
+    <tfoot><tr><td>Basket total</td><td></td><td></td><td>${g.total_lots} lots</td><td>${fmtR(g.capital)}</td>
+      <td style="color:var(--proj)">${sgn(p.p50||0)}</td><td class="neg">${fmtR(-(g.maxdd_p95||0))}</td>
+      <td class="why">${g.maxdd_p95>g.dd_budget?'⚠ DD budget se bahar':'DD budget ke andar ✓'}</td></tr></tfoot>
+  </table></div>
+
+  <div class="scg">
+    ${['safe','balanced','aggressive'].map(n=>{
+      const s=SCEN[n], sp=s.projection||{};
+      const nm={safe:'🛡️ Safe',balanced:'⚖️ Balanced',aggressive:'🔥 Aggressive'}[n];
+      return `<div class="sc ${n===CURSCEN?'on':''}" onclick="pickScen('${n}')">
+        <h5>${nm}${n===CURSCEN?' <span class="pill p-gold">chuna gaya</span>':''}</h5>
+        <div class="kv"><span>Lots</span><span>${s.total_lots}</span></div>
+        <div class="kv"><span>Capital</span><span>${fmtR(s.capital)}</span></div>
+        <div class="kv"><span>Expected</span><span style="color:var(--proj)">${sgn(sp.p50||0)}</span></div>
+        <div class="kv"><span>Goal hit</span><span>${s.p_hit}%</span></div>
+        <div class="kv"><span>Bad case</span><span class="neg">${fmtR(-(s.maxdd_p95||0))}${s.over_budget?' ⚠':''}</span></div>
+      </div>`;}).join('')}
+  </div>
+
+  <div class="rule"><b>Sizing ka rule:</b> lots <u>margin se nahi, drawdown-budget se</u> nikalte hain, aur
+    drawdown ka matlab <b>peak-to-trough</b> hai (sirf aakhri din ka nuksan nahi) — warna risk kam dikhta hai.
+    Har basket ka 1-in-20 bura drawdown aapke diye budget ke andar rehta hai; nahi ho paata to page saaf bolta hai
+    ki is capital pe ye target safely possible nahi.</div>
+
+  <div style="margin-top:16px;display:flex;gap:11px;flex-wrap:wrap">
+    <button class="applybtn" onclick="openApply()">⚡ Ye plan system pe laagu karo</button>
+    <button class="ghost" onclick="loadPlan(true)">↩️ Rollback (pichla config wapas)</button>
+  </div>`;
+  document.getElementById('goalBox').innerHTML = html;
+  document.getElementById('applyBox').innerHTML = '';
+}
+
+/* ══════════════ APPLY ══════════════ */
+async function openApply(){
+  const box = document.getElementById('applyBox');
+  box.innerHTML = '<p class="load">Diff nikal rahe hain…</p>';
+  const plan = {...GOAL, name: CURSCEN};
+  try{
+    const r = await fetch('/api/roadmap/plan/preview',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({plan})});
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'fail');
+    renderApply(j.preview, plan);
+    box.scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(e){ box.innerHTML = `<div class="err">Preview fail: ${esc(e.message||e)}</div>`; }
+}
+
+function renderApply(pv, plan){
+  const rows = pv.rows.map(r=>`<tr${r.skip_reason?' style="opacity:.55"':''}>
+    <td><span class="sid">${esc(r.id)}</span> <span class="snm">${esc(r.label)}</span>
+      ${r.mode==='live'?'<span class="pill p-real">Real</span>':'<span class="pill p-paper">Paper</span>'}</td>
+    <td class="chg">${r.lots_to?`<span class="old">${r.lots_from==null?'—':r.lots_from}</span><span class="new">${r.lots_to}</span>`:'<span style="color:var(--faint)">basket se bahar</span>'}</td>
+    <td class="chg">${r.cap_to?`<span class="old">${r.cap_from?fmtR(r.cap_from):'—'}</span><span class="new">${fmtR(r.cap_to)}</span>`:'—'}</td>
+    <td style="color:var(--muted)">${esc(r.mode)} <span style="font-size:.68rem;color:var(--faint)">(nahi badla)</span></td>
+    <td class="why" style="color:${r.queued?'var(--gold)':(r.skip_reason?'var(--faint)':'var(--up)')}">
+      ${r.skip_reason?esc(r.skip_reason):(r.queued?`agli entry se (${r.open_legs} leg khuli hai)`:(r.lots_to?'turant':'chhua nahi jayega'))}</td>
+  </tr>`).join('');
+
+  document.getElementById('applyBox').innerHTML = `
+  <div class="apply">
+    <header><h3>⚡ Ye plan system pe laagu karo</h3><div class="sp"></div>
+      <span class="clbl">${esc(plan.name)} · ${plan.total_lots} lots · ${fmtR(plan.capital)}</span></header>
+    <div class="body">
+      <div class="tw"><table class="t" style="min-width:620px">
+        <thead><tr><th>Strategy</th><th>Lots</th><th>Capital cap</th><th>Mode</th><th>Kab lagega</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+
+      <div class="rails">
+        <div class="rail"><span>✅</span><div><b>Sirf lots + capital cap</b> likhega — backup, atomic write aur readback-verify ke saath.</div></div>
+        <div class="rail no"><span>🚫</span><div><b>Mode kabhi khud nahi badlega.</b> Paper strategy is button se live nahi hogi.</div></div>
+        <div class="rail no"><span>🚫</span><div><b>Khuli position ke lots beech me nahi badlenge</b> — wo change agli fresh entry se lagega.</div></div>
+        <div class="rail"><span>↩️</span><div><b>Rollback ek click</b> — pichla config wapas, kabhi bhi.</div></div>
+        <div class="rail"><span>🔕</span><div><b>0-lot wali strategy band nahi hogi</b> — sirf plan me nahi ginegi. Band karna alag faisla hai.</div></div>
+        <div class="rail"><span>📋</span><div><b>Roz ka log isi plan pe banega</b> — Growth Roadmap tab me.</div></div>
+      </div>
+
+      <div class="confirm">
+        ${pv.needs_confirm?`<span class="clbl" style="width:100%">Real-money strategy is plan me hai — type karke confirm karein:</span>
+          <input id="confirmBox" placeholder="${esc(pv.confirm_token)}" autocomplete="off">`:''}
+        <button class="applybtn" onclick="doApply(false)">⚡ Plan apply karo</button>
+        <button class="ghost" onclick="doApply(true)">Sirf paper strategies pe apply</button>
+      </div>
+      <div id="applyResult"></div>
+    </div>
+  </div>`;
+  window._applyPlan = plan;
+}
+
+async function doApply(paperOnly){
+  const res = document.getElementById('applyResult');
+  const cb = document.getElementById('confirmBox');
+  res.innerHTML = '<p class="load">Apply ho raha hai…</p>';
+  try{
+    const r = await fetch('/api/roadmap/plan/apply',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({plan:window._applyPlan, confirm: cb?cb.value:'', paper_only:!!paperOnly})});
+    const j = await r.json();
+    if(!j.ok){ res.innerHTML = `<div class="err" style="margin-top:12px">${esc(j.reason||j.error||'apply fail')}</div>`; return; }
+    res.innerHTML = `<div class="applied">
+      <b>✅ Applied</b> · ${esc(j.plan.name)} · ${j.applied.length} strategies configure hui,
+      ${j.queued.length} queued (khuli position), ${j.skipped.length} skip.
+      <br><span style="color:var(--faint)">Backup: ${esc(j.backup.split(/[\\\\/]/).pop())} · readback verify pass ·
+      strategies apna naya lot-size agle start / agli entry pe lengi.</span></div>`;
+    loadPlan(); loadDaily(); loadPortfolio();
+  }catch(e){ res.innerHTML = `<div class="err" style="margin-top:12px">${esc(e.message||e)}</div>`; }
+}
+
+async function loadPlan(doRollback){
+  if(doRollback){
+    if(!confirm('Pichla config wapas laayein? (lots/capital plan se pehle jaise ho jayenge)')) return;
+    const r = await fetch('/api/roadmap/plan/rollback',{method:'POST'});
+    const j = await r.json();
+    alert(j.ok?'Rollback ho gaya — config pichle backup se restore.':('Rollback fail: '+(j.reason||j.error)));
+  }
+  try{
+    const r = await fetch('/api/roadmap/plan'); const j = await r.json();
+    PLAN = j.active || null;
+    const chip = document.getElementById('planChip');
+    if(PLAN){
+      chip.className='planchip';
+      chip.textContent = `● ${PLAN.name} · ${Object.values(PLAN.lots||{}).reduce((a,b)=>a+b,0)} lots · ${fmtR(PLAN.capital||0)}`;
+    }else{ chip.className='planchip none'; chip.textContent='koi active plan nahi'; }
+  }catch(e){}
+}
+
+/* ══════════════ per-strategy (existing engine) ══════════════ */
+async function bootStrategy(){
+  try{
+    const r = await fetch('/api/roadmap'); const j = await r.json();
     const sel = document.getElementById('stratSel');
-    sel.innerHTML = (j.strategies||[]).map(s=>`<option value="${s.id}">${s.label}</option>`).join('');
+    sel.innerHTML = (j.strategies||[]).map(s=>`<option value="${s.id}">${esc(s.label)}</option>`).join('');
     if(j.data){ sel.value = j.data.id; render(j.data); }
     else if((j.strategies||[]).length){ loadRoadmap(j.strategies[0].id); }
-  }catch(e){ document.getElementById('content').innerHTML = `<div class="err">Load failed: ${e}</div>`; }
+    else document.getElementById('content').innerHTML = '<p class="load">Koi per-strategy roadmap configure nahi hai.</p>';
+  }catch(e){ document.getElementById('content').innerHTML = `<div class="err">Load failed: ${esc(e.message||e)}</div>`; }
 }
 async function loadRoadmap(id){
   const r = await fetch('/api/roadmap?strategy='+encodeURIComponent(id));
   const j = await r.json();
   render(j.data || j);
 }
-
 function bandClass(b){ return {ontrack:'b-ontrack','on-track':'b-ontrack',ahead:'b-ahead',behind:'b-behind',alert:'b-alert',review:'b-alert'}[b]||'b-ontrack'; }
 function bandIcon(b){ return {'on-track':'✅',ahead:'🚀',behind:'🟡',alert:'🔴',review:'🔴'}[b]||'✅'; }
 
 function render(d){
   RD = d;
-  if(!d || d.error){ document.getElementById('content').innerHTML = `<div class="err">${(d&&d.error)||'no data'} — is strategy ka roadmap configure nahi hai.</div>`; return; }
-  document.getElementById('ttl').textContent = d.label;
+  if(!d || d.error){ document.getElementById('content').innerHTML = `<div class="err">${esc((d&&d.error)||'no data')} — is strategy ka roadmap configure nahi hai.</div>`; return; }
   const s = d.status, c = d.corridor, cf = d.cfg;
   const bc = bandClass(s.band);
-
   const actLine = s.action==='add_lot' ? `<span class="act">🎯 ACTION: ${s.lot_msg}</span>`
     : s.action==='review' ? `<span class="act">🔍 ACTION: engine re-validate karo</span>`
     : `<span class="act">✔ Kuch karne ki zaroorat nahi — rule pe raho</span>`;
@@ -152,13 +749,12 @@ function render(d){
   <div class="banner ${bc}">
     <div class="bicon">${bandIcon(s.band)}</div>
     <div class="btxt">
-      <h2>${s.verdict}</h2>
-      <p>${d.label} · ${s.days} din chali · ${s.trades} trades · abhi equity ${fmtR(s.equity)} vs median ${s.expected_median!=null?fmtL(s.expected_median):'—'} ${s.vs_median!=null?`(${s.vs_median>=0?'+':''}${s.vs_median.toFixed(1)}L)`:''}.</p>
+      <h2>${esc(s.verdict)}</h2>
+      <p>${esc(d.label)} · ${s.days} din chali · ${s.trades} trades · abhi equity ${fmtR(s.equity)} vs median ${s.expected_median!=null?fmtL(s.expected_median):'—'} ${s.vs_median!=null?`(${s.vs_median>=0?'+':''}${s.vs_median.toFixed(1)}L)`:''}.</p>
       ${actLine}
     </div>
   </div>
-  ${d.meta.caveat?`<div class="cav">⚠️ <b>Backtest caveat:</b> ${d.meta.caveat}</div>`:''}
-
+  ${d.meta.caveat?`<div class="cav">⚠️ <b>Backtest caveat:</b> ${esc(d.meta.caveat)}</div>`:''}
   <div class="strip">
     <div class="st"><div class="v">${fmtR(s.equity)}</div><div class="l">Equity</div></div>
     <div class="st"><div class="v ${s.net>=0?'pos':'neg'}">${s.net>=0?'+':''}${fmtR(s.net)}</div><div class="l">Net so far</div></div>
@@ -167,20 +763,12 @@ function render(d){
     <div class="st"><div class="v">${s.days}d</div><div class="l">Since ${cf.start_date}</div></div>
     <div class="st"><div class="v">${c.cagr}%</div><div class="l">Median CAGR</div></div>
   </div>
-
   <div class="acts">
-    <div class="acard">
-      <h3>🎯 Lot kab badhana</h3>
-      <div class="big">${s.cur_lots} → ${s.cur_lots+1} lots</div>
-      <p>${s.lot_msg}</p>
-    </div>
-    <div class="acard">
-      <h3>💰 Capital kab / kitna</h3>
-      <div class="big">${cf.sip_per_month>0?fmtR(cf.sip_per_month)+'/mo':'Profit-only'}</div>
-      <p>${s.cap_msg}</p>
-    </div>
+    <div class="acard"><h3>🎯 Lot kab badhana</h3>
+      <div class="big">${s.cur_lots} → ${s.cur_lots+1} lots</div><p>${esc(s.lot_msg)}</p></div>
+    <div class="acard"><h3>💰 Capital kab / kitna</h3>
+      <div class="big">${cf.sip_per_month>0?fmtR(cf.sip_per_month)+'/mo':'Profit-only'}</div><p>${esc(s.cap_msg)}</p></div>
   </div>
-
   <div class="chart-card">
     <h3>Peeche kya hua · aage kya (2-saal corridor)</h3>
     <div class="chart-legend">
@@ -192,7 +780,6 @@ function render(d){
     </div>
     <svg id="chart" viewBox="0 0 900 380" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
-
   <div class="mtbl-wrap">
     <table class="mtbl" id="mtbl">
       <thead><tr><th>Milestone</th><th>Bad luck (p5)</th><th>Median (plan)</th><th>Good luck (p95)</th><th>Lots</th></tr></thead>
@@ -200,15 +787,13 @@ function render(d){
     </table>
   </div>`;
   document.getElementById('content').innerHTML = html;
-  drawChart(d);
-  fillTable(d);
-
+  drawChart(d); fillTable(d);
   document.getElementById('foot').innerHTML = `<b>Kaise:</b> ${d.meta.n||251} real trades ka Monte-Carlo corridor (Sharpe ${d.meta.sharpe}${d.meta.oos_sharpe!=null?', OOS '+d.meta.oos_sharpe:''}${d.meta.p_value!=null?', p='+d.meta.p_value:''}) · aapki asli equity order_store se (net = gross − real charges). Track: <b>${cf.risk_pct}% ${cf.risk_pct==12?'Aggressive':'Reasonable'}${cf.sip_per_month>0?' + SIP':''}</b> · margin ₹${(cf.margin_per_lot||0).toLocaleString('en-IN')}/lot (real SPAN) · +1 lot per ₹${Math.round(d.lot_step).toLocaleString('en-IN')} equity. Median = optimistic-if-edge-holds, promise nahi — plan p5 pe. Display-only.`;
 }
 
 function drawChart(d){
   const c = d.corridor, cf = d.cfg, act = d.actual, s = d.status;
-  const svg = document.getElementById('chart');
+  const svg = document.getElementById('chart'); if(!svg) return;
   const W=900,H=380,ml=50,mr=14,mt=16,mb=30, iw=W-ml-mr, ih=H-mt-mb;
   const yMax = Math.ceil(Math.max(...c.p95, s.equity/1e5)/10)*10, yMin=Math.min(10, Math.floor((Math.min(...c.p5,s.equity/1e5)-0.5)));
   const x = m => ml + (m/MONTHS)*iw;
@@ -230,10 +815,8 @@ function drawChart(d){
   g+=`<path d="${path(c.p5)}" fill="none" stroke="${down}" stroke-width="1.3" opacity="0.8" stroke-dasharray="1 3"/>`;
   g+=`<path d="${path(c.p50)}" fill="none" stroke="${lineC}" stroke-width="2.4" stroke-linejoin="round"/>`;
   g+=`<circle cx="${x(24)}" cy="${y(c.p50[24])}" r="4" fill="${lineC}"/><text x="${x(24)-6}" y="${y(c.p50[24])-8}" text-anchor="end" font-size="12" font-weight="700" fill="${lineC}" font-family="Bricolage Grotesque">${fmtL(c.p50[24])}</text>`;
-  // ACTUAL equity line (start → today), month-idx x from dates
   const d0 = new Date(cf.start_date+'T00:00:00');
   const pts = [{m:0, v:bk}].concat((act.points||[]).map(p=>({m:(new Date(p.date+'T00:00:00')-d0)/(86400000*DPM), v:p.equity/1e5})));
-  // ensure a point at 'now' month_idx
   if(s.month_idx>0 && pts[pts.length-1].m < s.month_idx) pts.push({m:s.month_idx, v:s.equity/1e5});
   const ap = pts.map((p,i)=>(i?'L':'M')+x(p.m).toFixed(1)+','+y(p.v).toFixed(1)).join(' ');
   g+=`<path d="${ap}" fill="none" stroke="${ink}" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round"/>`;
@@ -253,7 +836,15 @@ function fillTable(d){
   }).join('');
 }
 
-boot();
+/* ══════════════ boot ══════════════ */
+(function boot(){
+  document.getElementById('toDate').value = addDays(32);
+  document.getElementById('gDate').value  = addDays(32);
+  segWire('segLane', v=>{ LANE=v; if(PF) renderPortfolio(PF); });
+  segWire('segLots', v=>{ LOTSMODE=v; loadPortfolio(); });
+  segWire('segHz',   v=>{ document.getElementById('toDate').value = addDays(+v); loadPortfolio(); });
+  loadPortfolio(); loadDaily(); loadPlan(); bootStrategy();
+})();
 </script>
 </body>
 </html>

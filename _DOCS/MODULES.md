@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**150 modules documented** across 10 folders.
+**153 modules documented** across 10 folders.
 
 
 ## Folders
@@ -1089,6 +1089,16 @@ gex_profile.py — Gamma-Exposure (GEX) profile per strike, from the on-disk opt
 - 🔧 `latest_date` — …
 - 🔧 `profile` — Return {ok, underlying, date, expiry, expiries[], snaps[], source, smooth} for one day.
 
+### `_ops/goal_planner.py`
+goal_planner.py — "mujhe ₹X chahiye Y date tak" → lots ka basket, aur usko system pe apply.
+
+- 🔧 `active_plan` — …
+- 🔧 `apply_plan` — Plan ko nifty_config me likho. Sirf lots + capital_rs.
+- 🔧 `preview_apply` — Kya-kya badlega — koi write nahi. Har row: lots old→new, cap old→new, mode (untouched),
+- 🔧 `rollback` — Pichle apply ka config backup wapas — plan store bhi peeche.
+- 🔧 `scenarios` — Safe / Balanced / Aggressive — teeno me DONO cheezein badalti hain: kitna risk lena
+- 🔧 `solve` — Greedy integer-lot allocation:
+
 ### `_ops/idea_vault.py`
 idea_vault.py — Quick idea/strategy/bug video capture store (display-only).
 
@@ -1339,6 +1349,25 @@ roadmap.py — per-strategy LIVE growth tracker (display-only, no order/risk pat
 - 🔧 `month_idx` — …
 - 🔧 `next_lot_equity` — Equity at which lots go current → current+1.
 - 🔧 `status` — …
+
+### `_ops/roadmap_daily.py`
+roadmap_daily.py — active plan ka ROZ ka report card (display-only, no order/risk path).
+
+- 🔧 `actual_by_day` — {iso: net} — plan ke members ka combined REAL net, exit-date pe bucket.
+- 🔧 `build` — Active plan ka daily log payload.
+- 🔧 `snapshot` — Roz ka snapshot disk pe (audit ke liye) — timer isse call karta hai.
+
+### `_ops/roadmap_portfolio.py`
+roadmap_portfolio.py — PORTFOLIO-level forward projection (display-only, no order/risk path).
+
+- 🔧 `build` — Page payload.
+- 🔧 `evaluate` — Kisi bhi lot-vector ka distribution — SAME bootstrap se (dobara simulate nahi).
+- 🔧 `load_cfg` — data/roadmap_portfolio.json — membership + book + blocked list.
+- 🔧 `members` — Har member ka merged view: config + registry label + live runtime state.
+- 🔧 `per_lot_series` — {dates: [iso], nets: [per-lot net Rs], meta: {...}} — backtest ke apne trades se,
+- 🔧 `project` — specs me har member ka `lots` — simulate + evaluate ka thin wrapper.
+- 🔧 `simulate_per_lot` — Bootstrap ek baar — har member ka PER-LOT path-total.
+- 🔧 `trading_days_between` — Aaj (exclusive) se target date (inclusive) tak ke asli trading din (NSE calendar).
 
 ### `_ops/signal_replay.py`
 signal_replay.py — TRAP #108 detector: "kya LIVE trader ne wahi kiya jo uska apna signal-code kehta hai?"
@@ -1719,6 +1748,13 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_rms_reconcile` — RMS Stage 3 — read-only drift check: our own capital_in_use(None) vs the
 - 🔧 `api_rms_summary` — …
 - 🔧 `api_roadmap` — …
+- 🔧 `api_roadmap_daily` — …
+- 🔧 `api_roadmap_goal` — Solve only — koi write nahi.
+- 🔧 `api_roadmap_plan` — …
+- 🔧 `api_roadmap_plan_apply` — Config WRITE — sirf lots + capital_rs. Live member ho to typed confirm zaroori.
+- 🔧 `api_roadmap_plan_preview` — Kya-kya badlega — read-only.
+- 🔧 `api_roadmap_plan_rollback` — …
+- 🔧 `api_roadmap_portfolio` — …
 - 🔧 `api_run_status` — Return running status of all known strategy ids.
 - 🔧 `api_scanner_run` — …
 - 🔧 `api_set_config` — …

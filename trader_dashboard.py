@@ -1058,6 +1058,125 @@ def api_roadmap():
         return jsonify({"ok": False, "error": str(e)})
 
 
+# ─────────────────────────────────────────────── Roadmap v2: portfolio + goal planner
+# Display/config-only. Sirf APPLY (`/api/roadmap/plan/apply`) config likhta hai — aur wo
+# bhi sirf lots + per-strategy capital_rs; mode/active kabhi nahi (goal_planner ke rails).
+@app.route('/api/roadmap/portfolio')
+def api_roadmap_portfolio():
+    try:
+        import roadmap_portfolio as _rp
+        to = request.args.get('to') or None
+        lane = (request.args.get('lane') or 'all').lower()
+        lots_mode = (request.args.get('lots_mode') or 'live').lower()
+        tgt = request.args.get('target')
+        data = _rp.build(to, lane if lane in ('real', 'all') else 'all',
+                         lots_mode if lots_mode in ('live', 'plan') else 'live',
+                         target=float(tgt) if tgt else None)
+        return jsonify({"ok": True, "data": data})
+    except Exception as e:
+        print("[roadmap-portfolio] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/roadmap/goal', methods=['POST'])
+def api_roadmap_goal():
+    """Solve only — koi write nahi."""
+    try:
+        import goal_planner as _gp
+        b = request.get_json(force=True, silent=True) or {}
+        target = float(b.get('target') or 0)
+        to_date = b.get('to_date')
+        dd = float(b.get('dd_budget') or 0)
+        scope = (b.get('scope') or 'all').lower()
+        ids = b.get('ids') or None
+        if not to_date:
+            return jsonify({"ok": False, "error": "to_date chahiye"})
+        if b.get('scenarios'):
+            return jsonify({"ok": True, "scenarios": _gp.scenarios(target, to_date, dd, scope, ids)})
+        p_goal = float(b.get('p_goal') or 60.0)
+        return jsonify({"ok": True, "plan": _gp.solve(target, to_date, dd, scope, ids,
+                                                      p_goal=p_goal)})
+    except Exception as e:
+        print("[roadmap-goal] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/roadmap/plan', methods=['GET'])
+def api_roadmap_plan():
+    try:
+        import goal_planner as _gp
+        act = _gp.active_plan()
+        store = _gp._plan_store()
+        return jsonify({"ok": True, "active": act, "history": (store.get('history') or [])[:10]})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/roadmap/plan/preview', methods=['POST'])
+def api_roadmap_plan_preview():
+    """Kya-kya badlega — read-only."""
+    try:
+        import goal_planner as _gp
+        b = request.get_json(force=True, silent=True) or {}
+        plan = b.get('plan') or {}
+        return jsonify({"ok": True, "preview": _gp.preview_apply(plan)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/roadmap/plan/apply', methods=['POST'])
+def api_roadmap_plan_apply():
+    """Config WRITE — sirf lots + capital_rs. Live member ho to typed confirm zaroori."""
+    try:
+        import goal_planner as _gp
+        b = request.get_json(force=True, silent=True) or {}
+        plan = b.get('plan') or {}
+        if not (plan.get('members') or []):
+            return jsonify({"ok": False, "error": "plan khaali hai"})
+        res = _gp.apply_plan(plan, confirm=b.get('confirm'),
+                             paper_only=bool(b.get('paper_only')),
+                             note=b.get('note') or '')
+        if res.get('ok'):
+            try:
+                notify.info("roadmap_plan_applied",
+                            f"Plan '{res['plan']['name']}' applied — "
+                            f"{len(res['applied'])} strategies configured, "
+                            f"{len(res['queued'])} queued (open position)",
+                            source="roadmap")
+            except Exception:
+                pass
+        return jsonify(res)
+    except Exception as e:
+        print("[roadmap-apply] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/roadmap/plan/rollback', methods=['POST'])
+def api_roadmap_plan_rollback():
+    try:
+        import goal_planner as _gp
+        res = _gp.rollback()
+        if res.get('ok'):
+            try:
+                notify.info("roadmap_plan_rollback", "Roadmap plan rolled back — "
+                            "config pichle backup se restore", source="roadmap")
+            except Exception:
+                pass
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/roadmap/daily')
+def api_roadmap_daily():
+    try:
+        import roadmap_daily as _rd
+        return jsonify({"ok": True, "data": _rd.build()})
+    except Exception as e:
+        print("[roadmap-daily] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route('/api/daily-report')
 def api_daily_report():
     import daily_report as dr

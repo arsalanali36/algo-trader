@@ -1,0 +1,9 @@
+[Unit]
+Description=Roadmap daily log snapshot after market close (Mon-Fri 15:52 IST)
+
+[Timer]
+OnCalendar=Mon..Fri 15:52:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

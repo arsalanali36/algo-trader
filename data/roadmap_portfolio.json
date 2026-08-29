@@ -1,0 +1,58 @@
+{
+  "_note": "Growth Roadmap v2 membership. `book` = declared capital us strategy ke liye (return % ka denominator). `run_lots` blank chhodo to registry_economics khud nikalega. `blocked` me daali strategy KISI projection/plan me nahi ginegi.",
+  "members": [
+    {
+      "id": "02.17",
+      "config_key": "_weekly_ironfly",
+      "slug": "weekly_ironfly",
+      "label": "Weekly Iron-Fly (day-after-expiry)",
+      "book": 1400000,
+      "start_date": "2026-08-26",
+      "capacity_lots": 40,
+      "enabled": true
+    },
+    {
+      "id": "02.10.01",
+      "config_key": "bnf_strangle_hedged",
+      "slug": "bnf_strangle_hedged",
+      "label": "BNF 9:20 Strangle - Hedged",
+      "book": 500000,
+      "start_date": "2026-08-26",
+      "capacity_lots": 40,
+      "enabled": true
+    },
+    {
+      "id": "02.07.01",
+      "config_key": "straddle_alert_hedged",
+      "slug": "straddle_alert_hedged",
+      "label": "Straddle @ Alert - Hedged",
+      "book": 400000,
+      "start_date": "2026-08-26",
+      "capacity_lots": 20,
+      "enabled": true
+    },
+    {
+      "id": "04.03.02",
+      "config_key": "chainzone_v1",
+      "slug": "chain_zone_longatm",
+      "label": "Ars chain - Directional BUY (long ATM)",
+      "book": 100000,
+      "start_date": "2026-07-11",
+      "capacity_lots": 20,
+      "enabled": true
+    },
+    {
+      "id": "11.01",
+      "config_key": "_delta_ironfly",
+      "slug": "delta_ironfly_btc",
+      "label": "Delta BTC Iron-Fly (daily)",
+      "book": 0,
+      "start_date": "2026-08-24",
+      "capacity_lots": 50,
+      "enabled": false
+    }
+  ],
+  "blocked": {
+    "11.01": "Backtest LOOKAHEAD-biased (ATM strike entry ke 6 ghante BAAD ke spot se chuna gaya; ek-line fix pe Sharpe 9.81 -> -1.31, corrected -152.6/trade). Jab tak clean re-backtest nahi, ye kisi projection ya plan me nahi ginegi. LESSONS #190."
+  }
+}

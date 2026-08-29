@@ -15,6 +15,21 @@
 
 ---
 
+## 2026-08-29 — 🚀 Growth Roadmap v2 — Portfolio projection + Goal Planner (target → lots basket) + daily expected-vs-actual log
+**Status:** DONE (local; audit 0 FAIL, apply-guard test 8/8 groups PASS, real-data browser harness verified)
+**Layer:** ui + config (apply path touches nifty_config lots/capital — money-adjacent, NOT order path)
+**Kya:** `/roadmap` ko 2-tab page banana — (1) **Growth Roadmap**: portfolio-level forward projection (median + p5/p25/p75/p95 band + P(loss)) kisi bhi date tak, Real vs Paper alag lanes, per-strategy on-track/behind, + roz ka expected-vs-actual log; (2) **Goal Planner**: ulta sawaal — "₹X chahiye Y date tak, max DD ₹Z" → DD-budget se integer-lot basket solve + Safe/Balanced/Aggressive modes + **Apply** jo chosen plan ke lots + per-strategy capital cap `nifty_config` me likh de.
+**Files (naye):** `_ops/roadmap_portfolio.py` (projection engine, display-only) · `_ops/goal_planner.py` (solver + plan store + apply/rollback) · `_ops/roadmap_daily.py` (daily log builder) · `data/roadmap_portfolio.json` (membership+book config) · `templates/roadmap.html` (rewrite, 2 tabs).
+**Files (touch):** `trader_dashboard.py` (naye `/api/roadmap/*` routes) · `_ops/roadmap.py` (existing per-strategy engine — reuse, extend nahi torna).
+**Kyun:** user ko investor-facing jawab chahiye "16 Sep tak kitna paisa" — realistic, band ke saath, real-vs-paper mix kiye bina; aur ulta "₹30k chahiye to kitne lot + kitna capital + kitna risk", phir wahi plan set-and-forget deploy ho jaye aur roz ka report bataye smooth chal raha ya nahi.
+**Reuse (Rule 6B):** `backtest_calendar._load_results` (runs/*/results.js, mtime-cached) · `registry_economics.economics` (per-lot capital, lots_in_run, lot_size) · `roadmap.actual_equity`/`_matcher` (resolve-aware actual P&L) · `order_store.trades_for_range` · `strategy_registry.resolve/label` · `charges` (date-aware, already inside results).
+**Safety rails (apply path):** sirf `lots`+per-strategy `capital_rs` likhega; `mode`/`active` KABHI nahi (paper→live planner se possible nahi); khuli position wali strategy = queue (agli entry se), mid-position lots nahi badalte; config backup + audit log + readback-verify; rollback; real-money strategy pe typed confirm.
+**Honest scope:** projection = backtest ke apne trades ka block-bootstrap (edge persist karega ye assume karta hai); paper lane me broker rejection/slippage modelled nahi; 11.01 Delta BTC **projection se BLOCKED** (lookahead-biased backtest, LESSONS #190).
+**Depends on:** `runs/<slug>/results.js` (bs|full all_trades) har member strategy ke liye maujood hona.
+**Kya bana (final):** `_ops/roadmap_portfolio.py` (`simulate_per_lot` ek baar → `evaluate(lots)` kai baar; per-din `curve`; **max-drawdown peak-to-trough** — terminal p5 se DD naapna risk ko systematically kam dikhata tha, wo mid-build pakda+fix hua) · `_ops/goal_planner.py` (objective = **P(target) ≥ p_goal**, median nahi — median pe rukna ~50% chance deta hai; DD budget hard wall; Safe/Balanced/Aggressive risk_mult+p_goal dono badalte hain warna teeno identical aate the) · `_ops/roadmap_daily.py` (plan ke apne lots pe per-din corridor → aaj ka percentile → 🟢/🟡/🔴) · `data/roadmap_portfolio.json` (membership+book, 11.01 blocked) · `templates/roadmap.html` (2 tab; purana per-strategy view Tab-1 me preserved) · 7 naye `/api/roadmap/*` routes · `_DEPLOY/algo-roadmap-daily.{service,timer}` (Mon-Fri 15:52 IST) · `_DEV/tests/test_goal_planner_apply.py` (apply-rails guard) · `_DEV/roadmap_harness.py` (dev render harness, apply blocked).
+**Verify:** audit 0 FAIL · template Jinja-parse + `node --check` · apply-test 8 groups (confirm-gate / mode+active untouched / open-position queue / paper-only / 0-lot untouched / rollback byte-identical / readback) · real-data harness: portfolio 5 rows + fan chart, goal solve (₹30k→30 Sep, DD ₹60k → 11 lots, ₹6.76L, P(hit) 60%, maxDD-p95 ₹25,585), apply-preview ne khuli position wali strategy ko sahi "agli entry se" queue kiya.
+**Trap (naya, chhota par 500-level):** JS template-literal me `$`+`{`+`{` Jinja ke expression-open se takraata hai → poora template `TemplateSyntaxError`. Helper fn use karo, inline object-literal nahi (`statusColor()`); comment me bhi wo sequence mat likho (mera apna comment isi se toota).
+
 ## 2026-08-18 — 🐛 Close/squareoff matches broker product (MIS vs NRML) — TRAP #178
 **Status:** DONE + VPS-LIVE (`ca0b563`; audit 0 FAIL; dashboard+monitor restart, 19 forks intact; helper present in venv). Money-path.
 **Layer:** execution + ui
@@ -1683,3 +1698,42 @@ karti; module self-test 5/5; audit 0 FAIL; local↔VPS md5 identical.
 — phantom leg wahi se bani. Money-adjacent hai aur pichhli netting change ne 507 record regress
 kiye the → whole-DB A/B ke bina haath nahi lagaya. Orders page pe symptom chhup gaya,
 per-strategy views me abhi bhi hai.
+
+## 2026-08-29 — 11.01 note-only annotation (user decision: keep running)
+**Status:** DONE
+**Kya:** User ne 11.01 ko chalne dene ka faisla kiya ("profit de rahi hai, note laga do").
+Sirf NOTES lagaye, koi behaviour change nahi: registry `11.01.note`, Lab `meta.json.note`
+(stats jaan-boojh ke unchanged), live-file docstring me purana "significant + slippage-proof"
+claim WITHDRAWN, CLAUDE.md Feature Index row.
+**Layer:** docs/metadata only
+**Kyun:** finding permanently discoverable rahe jahan-jahan strategy dikhti hai.
+**Khula (user ko bataya):** Lab meta abhi bhi `significant:true` + Sharpe 5.03 rakhta hai —
+Roadmap/Lab wahan se jo bhi auto-suggestion de wo bharosemand nahi.
+
+## 2026-08-29 — BTC positional momentum (research)
+**Status:** DONE — does NOT pass deploy gate (OOS p=0.22)
+**Kya:** BTC pe positional momentum (kuch din ka hold) — option bechne me edge nahi mila to
+direction test kiya.
+**Layer:** research (koi live/order path nahi)
+**Files:** `scratch/btc_momentum/` + `_TRADING_DATA/Crypto/BTCUSDT_{1d,4h}.csv`
+**Result:** best = `tsmom 20d` long-only (avg hold 10.6d, 58% exposure). FULL 9y **50.08x /
+CAGR 54.2% / Sharpe 1.18 / DD -56.8% / p=0.031** vs buy&hold 18.16x/37.8%/0.82/-83.2%.
+TRAIN strong. **OOS 2023-26 FAIL: p=0.221, aur buy&hold (4.68x) momentum (2.33x) se aage.**
+Poora family same shape. Long/short har jagah kharab (BTC ka drift short ko maarta hai).
+**Jo asli hai:** drawdown dono period me ~aadha (-83->-57 full, -53->-34 OOS). **Jo sabit nahi
+hua:** return alpha. **Jaan-boojh ke OOS pe tuning NAHI ki** (warna fake OOS pass ban jaata).
+**Data:** Binance 2017-08-> (3300 daily), Delta ke overlap se cross-check median diff 0.036%
+(Delta ki apni series 2023-12 se + Jan-2024 me frozen prints — isliye research Binance pe).
+Costs Delta se (perp taker 0.05%/side, funding 0.03%/day longs).
+
+## 2026-08-29 — BTC non-momentum battery + cash-and-carry measurement (research)
+**Status:** DONE — battery SAB FAIL; carry = ek structural positive (par decaying + tax/venue gated)
+**Kya:** BTC pe momentum ke alawa tareeke. Pre-declared families A/B/C/D, ~27 config x 3 window.
+**Files:** `scratch/btc_momentum/{battery,carry,fetch_funding}.py`, `_TRADING_DATA/Crypto/BTCUSDT_funding.csv`
+**Result:** koi bhi TRAIN+OOS dono me pass nahi. Jo "pass" dikha wo alag-alag family me tha aur
+doosre half me gir gaya = noise ka classic shape (Bonferroni 0.05/27=0.0019, koi paas nahi).
+**Positive:** cash-and-carry (long spot + short perp) gross **12.30%/yr**, worst DD −1.48%, har
+saal green; basis risk NAAPA (90-din hold pe sd 0.077% vs 3.03% funding) = khatra nahi.
+**Par:** carry decay ho rahi (2021 +30.6% -> 2026 +1.7% ytd), Delta India derivatives-only (spot
+leg doosre venue pe), India tax 30%+1% TDS -> aaj ke run-rate pe FD se saaf behtar NAHI.
+Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.

@@ -1,0 +1,8 @@
+[Unit]
+Description=Roadmap daily log — active plan ka expected-vs-actual snapshot (display-only)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" -X utf8 _ops/roadmap_daily.py --snapshot
