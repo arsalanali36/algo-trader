@@ -42,6 +42,19 @@ _HEDGE_KEYWORDS = ("fly", "condor", "iron", "spread", "hedge")
 _ECON_CACHE = {}   # slug -> (mtime, econ dict|None)
 
 
+def _load_meta_params(slug):
+    """Read the run's meta.json params (authoritative lots + structure the backtest was
+    sized/built at). meta.json is a sibling of results.js. Returns {} on any failure."""
+    try:
+        import os as _os
+        import json as _json
+        d = _os.path.dirname(_bc._results_path(slug))
+        with open(_os.path.join(d, "meta.json"), encoding="utf-8") as fh:
+            return (_json.load(fh) or {}).get("params") or {}
+    except Exception:
+        return {}
+
+
 def _one_run(slug):
     data = _bc._load_results(slug)
     combo, _key = _bc._pick_combo(data, "bs", "full")
@@ -49,6 +62,18 @@ def _one_run(slug):
     if not trades:
         return None
     lot_size = int(data.get("lot_size") or (data.get("meta") or {}).get("lot_size") or 0) or None
+
+    # Authoritative sizing/structure from meta.params (backtest's own record) — more
+    # reliable than deriving lots from qty/lot_size (BankNifty's backtest lot != the
+    # current lot_size, so qty is not divisible) or sniffing structure from opt_type.
+    _mp = _load_meta_params(slug)
+    meta_lots = _mp.get("lots")
+    try:
+        meta_lots = int(meta_lots) if meta_lots else None
+    except Exception:
+        meta_lots = None
+    _struct = str(_mp.get("structure") or "").lower()
+    struct_hedged = any(k in _struct for k in _HEDGE_KEYWORDS)
 
     gross = 0.0
     fee = 0.0
@@ -85,8 +110,16 @@ def _one_run(slug):
         elif q > 0 and es > 0 and not is_buy:
             sell_notional.append(es * q)     # short notional (at the run's native qty)
 
-    # lots the backtest sized at (median, robust to odd rows); 1 if not derivable
-    lots_in_run = int(sorted(lot_mults)[len(lot_mults) // 2]) if lot_mults else 1
+    hedged = hedged or struct_hedged      # meta.structure is the authoritative signal
+
+    # lots the backtest sized at: meta.params.lots wins (authoritative); else derive from
+    # qty/lot_size (median, robust to odd rows); else 1.
+    if meta_lots and meta_lots > 0:
+        lots_in_run = meta_lots
+    elif lot_mults:
+        lots_in_run = int(sorted(lot_mults)[len(lot_mults) // 2])
+    else:
+        lots_in_run = 1
     lots_in_run = max(1, lots_in_run)
 
     # ---- charge split: flat brokerage (does NOT scale with lots) vs turnover (per lot).
