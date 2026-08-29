@@ -526,7 +526,7 @@ function applyLots(){
     r.tax_rs = Math.round(tax);
     r.capital = (cap!=null)? Math.round(cap) : undefined;
     r.netcap = (cap && cap>0)? +(net/cap).toFixed(1) : undefined;   // cumulative ×over period
-    r._capkind = e.capital_kind;
+    r._capkind = e.capital_kind; r._capbasis = e.capital_basis;
   });
   const el=document.getElementById('lotsIn'); if(el)el.value=N;
   const li=document.getElementById('lotsInfo'); if(li)li.textContent=(N===1?'1 lot (backtest base)':N+' lots');
@@ -703,10 +703,12 @@ function cell(r,k){
     case 'win':return fnum(r.win,0,'%');
     case 'trades':return (r.trades!=null&&!isNaN(r.trades))?Number(r.trades).toLocaleString('en-IN'):dash();
     case 'pval':return (r.pval==null||isNaN(r.pval))?dash():(r.pval<0.05?`<span class="sig-pass">✅ ${(+r.pval).toFixed(3)}</span>`:`<span class="sig-fail">⚠️ ${(+r.pval).toFixed(3)}</span>`);
-    case 'capital':{if(r.capital==null)return dash();
-        const est=(r._capkind==='SELL'||r._capkind==='mixed')?'~':'';
-        const t=r._capkind==='SELL'?'~SPAN margin estimate':(r._capkind==='BUY'?'premium paid (debit)':'estimate');
-        return `<span style="color:#d29922;font-weight:600" title="Capital to run @ ${LOTS} lot(s) — ${t}">${est}₹${(r.capital).toLocaleString('en-IN')}</span>`;}
+    case 'capital':{
+        if(r._capbasis==='crypto') return `<span style="color:var(--mut)" title="Crypto (Delta) uses portfolio margin — a defined-risk fly blocks ≈$0, and USD premiums aren't INR-comparable. Not SPAN-estimable from the backtest.">—</span>`;
+        if(r.capital==null)return dash();
+        const est=(r._capkind&&r._capkind.indexOf('~')>=0)?'~':'';
+        const t={buy:'premium / value paid (debit)',naked_sell:'~naked short-option SPAN (estimate)',hedged:'~defined-risk margin: naked SPAN × 0.5, wings cut it (estimate, calibrated vs real broker margin)'}[r._capbasis]||'estimate';
+        return `<span style="color:#d29922;font-weight:600" title="Capital to run 1 lot × ${LOTS} — ${t}">${est}₹${(r.capital).toLocaleString('en-IN')}</span>`;}
     case 'net_rs':return (r.net_rs==null)?dash():`<span class="${r.net_rs>=0?'pos':'neg'}" title="Net P&L @ ${LOTS} lot(s) — charges recomputed (flat brokerage does NOT scale)">₹${(r.net_rs).toLocaleString('en-IN')}</span>`;
     case 'tax_rs':return (r.tax_rs==null)?dash():`<span style="color:var(--mut)" title="Charges @ ${LOTS} lot(s): flat brokerage + turnover×lots">₹${(r.tax_rs).toLocaleString('en-IN')}</span>`;
     case 'netcap':return (r.netcap==null)?dash():`<span class="${r.netcap>=0?'pos':'neg'}" title="Net ÷ Capital = cumulative multiple over the FULL backtest period (not per-year)">${r.netcap}×</span>`;

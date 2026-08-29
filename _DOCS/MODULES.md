@@ -1316,8 +1316,8 @@ reconcile_csv.py — reconcile the app's LIVE ledger to an uploaded Zerodha trad
 ### `_ops/registry_economics.py`
 Registry economics — per-run lot-independent P&L / charge / capital model.
 
-- 🔧 `all_economics` — {slug: econ} for the given slugs (default: every run in runs/index.json).
-- 🔧 `economics` — Per-run economics (lot-independent), cached on results.js mtime. None if no run.
+- 🔧 `all_economics` — {slug: econ}. Default = every registry strategy with a backtest run (so each is
+- 🔧 `economics` — Per-run economics (lot-independent), cached on results.js + registry mtime. The run
 
 ### `_ops/report_notes.py`
 report_notes.py — server-side observation notes for the Daily Report page.

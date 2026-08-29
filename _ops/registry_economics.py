@@ -37,9 +37,67 @@ _SPAN_PCT = 0.11              # ~naked short-option SPAN as % of notional (fair 
 # risk. Calibrated against a real live NIFTY weekly iron-fly (Sensibull margin 1.38L on
 # 2 lots = ~69k/lot vs naked-SPAN ~1.5L/lot => ~0.5). Rough, labelled "HEDGED~est".
 _HEDGE_MARGIN_FACTOR = 0.5
-_HEDGE_KEYWORDS = ("fly", "condor", "iron", "spread", "hedge")
+_HEDGE_KEYWORDS = ("fly", "condor", "iron", "spread", "hedge", "wing")
+_SHORT_WORDS = ("short", "sell", "credit")        # explicit net-seller
+_LONG_WORDS = ("long", "buy", "debit")            # explicit net-buyer
+_CRYPTO_KEYWORDS = ("btc", "eth", "delta", "crypto")
 
 _ECON_CACHE = {}   # slug -> (mtime, econ dict|None)
+_REG_CACHE = {"mt": None, "idx": {}}   # slug -> registry entry (structure/legs/instrument)
+
+
+def _registry_index():
+    """{slug: registry-entry} from strategy_registry.json, mtime-cached. The registry's
+    declared structure/legs/instrument is the SINGLE SOURCE OF TRUTH for how a strategy's
+    capital is classified — so every current AND future strategy is handled by declaring
+    those fields (already mandatory), not by teaching this module new opt_type strings."""
+    try:
+        rp = os.path.join(_ROOT, "strategy_registry.json")
+        mt = os.path.getmtime(rp)
+    except Exception:
+        return {}
+    if _REG_CACHE["mt"] == mt:
+        return _REG_CACHE["idx"]
+    idx = {}
+    try:
+        import json as _json
+        with open(rp, encoding="utf-8") as fh:
+            for _k, s in (_json.load(fh).get("strategies") or {}).items():
+                sl = s.get("slug")
+                if sl:
+                    idx[sl] = s
+    except Exception:
+        idx = {}
+    _REG_CACHE["mt"], _REG_CACHE["idx"] = mt, idx
+    return idx
+
+
+def _classify(structure, legs, instrument, run_net_short):
+    """One capital-class decision for ALL strategies. Structure/legs decide the SHAPE
+    (crypto / hedged-defined-risk / plain); explicit long/short words decide DIRECTION,
+    and when the structure string is direction-ambiguous ("Strangle"/"Straddle" can be
+    long OR short) the run's own net buy/sell decides. Returns:
+    'crypto' | 'hedged' | 'naked_sell' | 'buy'."""
+    st = str(structure or "").lower()
+    ins = str(instrument or "").lower()
+    try:
+        nlegs = int(legs) if legs is not None else 0
+    except Exception:
+        nlegs = 0
+    if any(k in ins for k in _CRYPTO_KEYWORDS):
+        return "crypto"                              # Delta portfolio margin != NSE SPAN
+    is_hedged = nlegs >= 4 or any(k in st for k in _HEDGE_KEYWORDS)
+    if any(w in st for w in _SHORT_WORDS):
+        net_short = True
+    elif any(w in st for w in _LONG_WORDS):
+        net_short = False
+    else:
+        net_short = run_net_short                    # ambiguous structure -> trust the run
+    if is_hedged:
+        # net-short = defined-risk seller (iron fly/condor, credit spread) -> SPAN x factor
+        # net-long  = debit structure (backspread, long fly) -> premium paid
+        return "hedged" if net_short else "buy"
+    return "naked_sell" if net_short else "buy"
 
 
 def _load_meta_params(slug):
@@ -55,7 +113,7 @@ def _load_meta_params(slug):
         return {}
 
 
-def _one_run(slug):
+def _one_run(slug, reg=None):
     data = _bc._load_results(slug)
     combo, _key = _bc._pick_combo(data, "bs", "full")
     trades = (combo or {}).get("all_trades") or []
@@ -63,17 +121,20 @@ def _one_run(slug):
         return None
     lot_size = int(data.get("lot_size") or (data.get("meta") or {}).get("lot_size") or 0) or None
 
-    # Authoritative sizing/structure from meta.params (backtest's own record) — more
-    # reliable than deriving lots from qty/lot_size (BankNifty's backtest lot != the
-    # current lot_size, so qty is not divisible) or sniffing structure from opt_type.
+    # Authoritative sizing from meta.params.lots (backtest's own record) — more reliable
+    # than deriving lots from qty/lot_size (BankNifty's backtest lot != the current
+    # lot_size, so qty is not divisible).
     _mp = _load_meta_params(slug)
     meta_lots = _mp.get("lots")
     try:
         meta_lots = int(meta_lots) if meta_lots else None
     except Exception:
         meta_lots = None
-    _struct = str(_mp.get("structure") or "").lower()
-    struct_hedged = any(k in _struct for k in _HEDGE_KEYWORDS)
+    # Structure/legs/instrument: registry entry is authoritative; meta.params is a backup.
+    reg = reg or {}
+    structure = reg.get("structure") or _mp.get("structure")
+    legs = reg.get("legs") or _mp.get("legs")
+    instrument = reg.get("instrument") or _mp.get("instrument")
 
     gross = 0.0
     fee = 0.0
@@ -82,7 +143,6 @@ def _one_run(slug):
     sell_notional = []  # notional of short legs -> SPAN base for a SELL
     lot_mults = []      # per-trade lots-baked-in (qty / lot_size) -> normalise to 1 lot
     legs_per_trade = 2  # orders/round-trip: 1-leg=2, straddle=4, iron-fly/condor=8
-    hedged = False
     for t in trades:
         g = float(t.get("gross") or 0)
         f = float(t.get("fee") or 0)
@@ -94,11 +154,9 @@ def _one_run(slug):
         q = float(t.get("qty") or 0)
         es = float(t.get("entry_spot") or 0)
         ot = str(t.get("opt_type") or "").lower()
-        if any(k in ot for k in _HEDGE_KEYWORDS):
-            hedged = True
         # legs baked into a single stored row (a "fly CE+PE" row = 4 legs = 8 orders)
-        if "+" in ot:                       # combined multi-leg row (CE+PE, fly CE+PE)
-            legs_per_trade = max(legs_per_trade, 8 if hedged else 4)
+        if "+" in ot or "fly" in ot or "condor" in ot:
+            legs_per_trade = max(legs_per_trade, 8 if ("fly" in ot or "condor" in ot) else 4)
         # lots baked into this run's qty (backtest may size at N lots, e.g. 5)
         if lot_size and q > 0 and q % lot_size == 0:
             lot_mults.append(int(round(q / lot_size)))
@@ -109,8 +167,6 @@ def _one_run(slug):
             buy_prem.append(ep * q)          # rupee premium paid (at the run's native qty)
         elif q > 0 and es > 0 and not is_buy:
             sell_notional.append(es * q)     # short notional (at the run's native qty)
-
-    hedged = hedged or struct_hedged      # meta.structure is the authoritative signal
 
     # lots the backtest sized at: meta.params.lots wins (authoritative); else derive from
     # qty/lot_size (median, robust to odd rows); else 1.
@@ -130,23 +186,28 @@ def _one_run(slug):
         flat = fee                           # over-subtract; treat all charge as flat
     per_lot_charge = max(0.0, fee - flat) / lots_in_run
 
-    # ---- capital per ONE lot: premium paid (BUY-dominant) or ~SPAN (SELL-dominant),
-    # normalised out of the run's native lot count. A hedged/defined-risk structure
-    # (iron-fly/condor/spread) blocks far less than naked SPAN -> apply hedge factor. ----
-    cap = None
+    # ---- capital per ONE lot, by ONE classifier keyed off the registry's declared
+    # structure (single source of truth for every current + future strategy). ----
     nb, ns = len(buy_prem), len(sell_notional)
-    if nb >= ns and buy_prem:
-        cap = (sum(buy_prem) / nb) / lots_in_run       # premium paid = capital for a BUY
-        side = "BUY"
-    elif sell_notional:
-        cap = (sum(sell_notional) / ns) * _SPAN_PCT / lots_in_run   # ~naked short SPAN
-        if hedged:
-            cap *= _HEDGE_MARGIN_FACTOR                 # defined-risk: wings cut margin
-            side = "HEDGED~"
-        else:
-            side = "SELL"
-    else:
-        side = "n/a"
+    run_net_short = ns >= nb
+    basis = _classify(structure, legs, instrument, run_net_short)
+    cap, kind = None, "n/a"
+    if basis == "crypto":
+        # Delta uses PORTFOLIO margin (a defined-risk fly blocks ~$0) — our NSE SPAN model
+        # does not apply and the run's USD premiums aren't INR-comparable. Honest "—".
+        cap, kind = None, "CRYPTO"
+    elif basis == "hedged" and sell_notional:
+        cap = (sum(sell_notional) / ns) * _SPAN_PCT * _HEDGE_MARGIN_FACTOR / lots_in_run
+        kind = "HEDGED~"
+    elif basis == "naked_sell" and sell_notional:
+        cap = (sum(sell_notional) / ns) * _SPAN_PCT / lots_in_run    # full naked SPAN
+        kind = "SELL~"
+    elif buy_prem:                                                   # buy / debit / equity
+        cap = (sum(buy_prem) / nb) / lots_in_run                     # premium/value paid
+        kind = "BUY"
+    elif sell_notional:                                             # fallback if only shorts
+        cap = (sum(sell_notional) / ns) * _SPAN_PCT / lots_in_run
+        kind = "SELL~"
 
     return {
         "gross_per_lot": round(gross / lots_in_run, 2),   # normalised to ONE lot
@@ -154,7 +215,8 @@ def _one_run(slug):
         "per_lot_charge": round(per_lot_charge, 2),       # turnover charge for ONE lot
         "net_per_lot": round(gross / lots_in_run - (flat + per_lot_charge), 2),  # 1-lot net
         "capital_per_lot": (round(cap) if cap else None),
-        "capital_kind": side,           # BUY=premium, SELL=~SPAN, HEDGED~=defined-risk est
+        "capital_kind": kind,       # BUY=premium, SELL~=naked SPAN, HEDGED~=defined-risk, CRYPTO=n/a
+        "capital_basis": basis,     # classifier decision (crypto/hedged/naked_sell/buy)
         "lot_size": lot_size,
         "lots_in_run": lots_in_run,     # lots the backtest was sized at (for transparency)
         "trades": n,
@@ -162,33 +224,38 @@ def _one_run(slug):
 
 
 def economics(slug):
-    """Per-run economics (lot-independent), cached on results.js mtime. None if no run."""
+    """Per-run economics (lot-independent), cached on results.js + registry mtime. The run
+    is classified by its registry entry (structure/legs/instrument) when one exists."""
     try:
         mt = os.path.getmtime(_bc._results_path(slug))
     except Exception:
         return None
+    reg = _registry_index().get(slug) or {}
+    key = (mt, _REG_CACHE["mt"])          # invalidate if the registry changed too
     hit = _ECON_CACHE.get(slug)
-    if hit and hit[0] == mt:
+    if hit and hit[0] == key:
         return hit[1]
     try:
-        e = _one_run(slug)
+        e = _one_run(slug, reg)
     except Exception:
         e = None
     if len(_ECON_CACHE) > 300:
         _ECON_CACHE.pop(next(iter(_ECON_CACHE)))
-    _ECON_CACHE[slug] = (mt, e)
+    _ECON_CACHE[slug] = (key, e)
     return e
 
 
 def all_economics(slugs=None):
-    """{slug: econ} for the given slugs (default: every run in runs/index.json)."""
+    """{slug: econ}. Default = every registry strategy with a backtest run (so each is
+    classified by its declared structure) UNION any other run in runs/index.json."""
     if slugs is None:
+        slugs = list(_registry_index().keys())
         try:
-            slugs = [r.get("slug") for r in _bc.list_runs() if isinstance(r, dict)]
+            slugs += [r.get("slug") for r in _bc.list_runs() if isinstance(r, dict)]
         except Exception:
-            slugs = []
+            pass
     out = {}
-    for s in slugs:
+    for s in dict.fromkeys(slugs):        # de-dup, preserve order
         if not s:
             continue
         e = economics(s)
