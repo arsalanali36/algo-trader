@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-08-30 — 🧹 "78 open positions" ka asli matlab + 30 dead paper rows saaf (data-only, koi code change nahi)
+**Status:** DONE (VPS, WAL-safe backup `/root/ARSALAN/_backups/trades.db.bak.stalepaper_20260830_000000`)
+**Layer:** data (order_store rows) — koi order/risk/signal path nahi
+
+**User ka sawaal:** "open 78 — ye kya hai?" (main ye number deploy-check me quote kar raha tha).
+**Jawab:** 78 me se sirf **8 LIVE legs** the (2 structures): 02.17 weekly iron-fly (SELL 24300 CE+PE,
+BUY 24550-CE/24050-PE, 26-Aug se) + **manual** ke 2 vertical spreads (28-Aug). Baaki 70 paper.
+
+**Do bilkul alag cheezein ek "open" list me dikhti hain** (ye samajhna asli seekh hai):
+1. **36 blocked-log rows** (`status='blocked'`, CAPITAL_BLOCKED) — ye kabhi position thi hi nahi,
+   RMS-rejection ka LOG hain; `_net_rows` inhe `_as_open()` se surface karta hai aur frontend
+   "🚫 blocked" panel me alag dikhata hai. **Sab Aug 24-28 ki = `purge_old_blocked(7)` ke review
+   window ke ANDAR** (cutoff 23-Aug) → purane June/July wale pehle hi auto-delete ho chuke the.
+   Yaani ye mechanism **theek chal raha hai**, koi bug nahi.
+2. **30 genuinely-dead paper entries** (23-Jun … 14-Aug) — intraday paper legs jinka exit kabhi
+   record hi nahi hua → hamesha ke liye "open". Inhe `status='cancelled'` kiya (`_DEAD` set me hai
+   → netting se pehle drop). **P&L bit-identical**: completed 2050→2050, net ₹87,215.21→₹87,215.21.
+
+**Meri galti (caught + reverted):** pehle pass me maine **blocked rows ko bhi `cancelled`** kar diya
+tha — par `order_store.py:545` khud likhta hai *"Blocked entries are cleaned by purge_old_blocked(),
+never re-statused"*. `cancelled` karne se wo purge se **immune** ho jaate (purge sirf
+`status='blocked'` delete karta hai) aur blocked-panel ki ginti bhi galat hoti. 36 rows wapas
+`blocked` kiye → ab apne aap 7 din baad delete honge.
+
+**Operational finding (asli baat):** `ARS_CHAIN_V1_PAPER` roz **7-8 entries CAPITAL_BLOCKED** khaati
+hai — "discretionary pool ₹19,00,000 hit" / "capital cap fully used". Isliye blocked-log itne banta
+hai. Ye tuning ka sawaal hai (23 stocks scan, max 2 trades/day), bug nahi.
+
+**Aage ke liye:** deploy-check me "open N" likhna hi kaafi nahi — **live legs / paper / blocked**
+alag likho, warna ek routine regression-number bada aur darawana lagta hai.
+
 ## 2026-08-29 — ⚖️ Goal Planner: per-strategy weights + concentration cap + funding check (cash vs collateral)
 **Status:** DONE + VPS-LIVE (`258f3bd`; audit 0 FAIL; positions 78→78, diff empty)
 **Layer:** ui + display-engine (koi order/risk path nahi — solver plan banata hai, apply ke wahi purane rails)
