@@ -1623,3 +1623,63 @@ Ek live webhook position ka DEFAULT-TSL SL FIRE hua par `_pre_exit_guard` ne "we
 **Kyun:** Naked seller ka ₹4k SL gap/spike pe hold nahi karta (registry khud 02.10 pe "disaster-wing before real money" likhta hai). Wings = defined risk → ₹4k SL asli + margin ~60-70% kam → 4 lot 4L me fit. A/B: paper twins (point-exit, naked) as-is chalengi taaki "limit ka faida vs table pe paisa chhoda" compare ho.
 **Depends on:** position_exit_rules (basket exit, ADR-014) + execution_gateway gate=False hedge path + atm_straddle_roller._enter_hedged_straddle (ordered entry reference) — sab pehle se maujood, reuse (Rule 6B).
 **PENDING (Monday se pehle):** standalone tests (wing builder, ordered exit, basket ₹ decision) → VPS deploy → active=true → Monday-open pehla live fire watch (wings lage, basket armed, per-leg SL off).
+
+## 2026-08-29 — 02.17 weekly iron-fly ka BTC (Delta crypto) port — backtest
+**Status:** DONE — **REJECTED** (research only, kuch deploy nahi)
+**Kya:** NIFTY weekly positional iron-fly (02.17) ki exact spec BTC weekly options pe test karna — real Delta premium, real fees+slippage.
+**Layer:** research (backtest only — koi live/order path nahi)
+**Files:** `_DELTA_CRYPTO/bt_weekly_fly.py` (naya), backup → `scratch/delta_crypto/`
+**Kyun:** 02.17 NSE pe live+profitable hai; kya wahi short-vol edge 24/7 BTC weeklies pe transfer hota hai? (memory: edge NSE se transfer NAHI hota — re-backtest mandatory)
+**Depends on:** `_DELTA_CRYPTO/delta_client.py` (zero-auth public candles), Delta weekly data 2024-05 →
+
+**Result:** 18 variants (wing 1-6% x target 50/75/hold), 94 weekly trades 2024-03->2026-08,
+real Delta premium + real fee (0.01%+GST) + measured spread slippage. **17 net-negative.**
+Best (`wing1% | take50`) net +8,074 pts / Sharpe 1.56 / p=0.016 par **OOS -2,424 vs train
++10,498** -> `min(train,OOS)` gate FAIL. Yearly decay 2024 +5,483 -> 2025 +2,350 -> 2026 +241.
+Zero-slippage pe bhi OOS sirf +776 pts (noise). Wajah structural: NIFTY ka +-250 wing = 0.85 sigma
+of a NIFTY week; BTC pe wahi 1%-of-spot wing = ~0.2 sigma (BTC weekly sigma ~5-6%) -> wings expected
+move ke andar, credit = wing-width ka ~79% (NIFTY ~45%) = market sahi price kar raha hai.
+**Do-not-redo.** Detail: `scratch/delta_weekly_fly/README.md`.
+**Data trap (LESSONS #189):** pehla sweep Sharpe 5-6 / win 91% dikha raha tha — deep-ITM crypto
+option candles STALE hain (lower-strike call ne higher-strike call se NEECHE print kiya). Fix =
+ITM leg ko put-call parity se (liquid OTM twin off) mark karo + no-arb clamp + MTM <= net credit
+invariant + 2-bar confirm.
+
+**Follow-up (same session) — "root cause pakda to kaam me kaise laayein?":**
+Root cause tuning lever nahi nikla. Direct VRP measurement (`vrp_probe.py`/`vrp_daily_g.py`):
+BTC weekly implied 3,518 vs realized 3,618 (**VRP -100**), daily (true 200-grid) 762 vs 772
+(**VRP -10**) — dono horizon fairly priced, bechne ko premium hai hi nahi. Bonus trap: daily
+expiries pe strike grid **200** hai (weekly 500) — 500 pe snap karne se fake "+54 VRP" bana tha.
+**Sabse bada finding: registry 11.01 (BTC daily iron-fly, testnet pe armed) ka poora backtest
+edge LOOKAHEAD hai** — `backtest_delta.py build()` ATM strike ko `spot at exp-6h` se chunta hai
+jabki entry `exp-12h` pe hoti hai = 6 ghante ka future. Original script ka apna sweep
+dose-response dikhata hai (H<=6 sab negative -> H=24 pe Sharpe 7.92/91% win). Ek line badalne se
+Sharpe +8.46 -> -4.23. Corrected re-audit: deployed config **-44,400 pts, Sharpe -4.50, p=1.000**.
+Live trader SAHI hai (entry ke live spot se ATM) yaani live honest=losing regime me chal raha hai.
+**Recommendation: 11.01 ko real money pe mat le jao.** LESSONS TRAP #190, detail
+`scratch/delta_weekly_fly/README.md`.
+
+## 2026-08-29 — 🩺 Broker-truth "what is open" — Orders page + leg-collision gate (TRAP #191)
+**Status:** DONE (Task 1 + Task 3; Task 2 = `_net_rows` deliberately deferred)
+**Kya:** Displayed open positions aur collision gate dono ab broker ki apni position book se
+reconcile hote hain, sirf apne day-scoped ledger se nahi.
+**Layer:** ui + execution (display-only + entry gate)
+**Files:** `trader_dashboard.py` (`_broker_open_snapshot`, `_leg_alive_at_broker`, `api_orders`),
+`_core/leg_collision.py` (`_broker_held_sec_ids`, `_own_open_sec_ids`, `occupied_sec_ids`)
+**Kyun:** User ne 3 alag shikayat ki — (1) 28-Aug −₹9,347 galat, (2) carry position gayab,
+(3) band leg open dikh rahi. Jad ek: har "kya open hai" read **day-scoped** hai
+(`order_store.trades_for(TODAY)`), isliye pichhle din ki leg structurally invisible hai.
+Isi se `manual` carry position gayab hui, aur isi se collision gate 26-Aug ka iron-fly wing
+na dekh saka → 28-Aug ko `straddle_alert_hedged` ne wahi 24550-CE contract le liya → Zerodha ke
+FIFO ne iron-fly ka purana lot kha ke uska −₹5,281 do din pehle book kar diya.
+**(1) bug NIKLA HI NAHI** — Zerodha Console ka apna "Gross realised Aug 28: −9,347.50" hamare
+calendar se paise-tak match karta hai. Pehle wahi verify kiya, warna sahi number "fix" ho jaata.
+**Depends on:** Kite positions read (ADR-011 authoritative-mirror principle)
+**Verify:** real VPS data pe displayed open legs 5 → 8 = Zerodha ke 8 net positions ka exact
+1:1 (side+qty); 76 paper legs untouched; broker forced-down pe zero change; collision replay —
+`straddle_alert_hedged` ko ab 24550-CE occupied dikhta, `weekly_ironfly_v1` khud ko block nahi
+karti; module self-test 5/5; audit 0 FAIL; local↔VPS md5 identical.
+**Khula (jaan-boojh ke):** `_net_rows` me `externally_closed` rows netting me shaamil rehte hain
+— phantom leg wahi se bani. Money-adjacent hai aur pichhli netting change ne 507 record regress
+kiye the → whole-DB A/B ke bina haath nahi lagaya. Orders page pe symptom chhup gaya,
+per-strategy views me abhi bhi hai.

@@ -4625,3 +4625,166 @@ See ADR-021 + memory `project_delta_crypto_options`.
   3. **DEFENSE (zombie-guard)** — `_run_position_exit_rules`: agar rule ke SAARE legs pichle din ke hain AUR strategy `allow_overnight` nahi → rule fire karne se PEHLE clear (churn impossible). Overnight strategies (weekly_ironfly/vrp_*) exempt.
 - **Fast detect:** `[exit-rule] g:<grp> TARGET/SL @ combined MTM ...` line me `<grp>` ka timestamp aaj ka nahi (pichle din ka = zombie). Ya `open_legs_in_group(gid)` "open" dikhaye par global netting (trad_sym) flat ho = exit ka group_id missing. Test: `_DEV/tests/test_zombie_exit_rule.py` (aaj ka incident reproduce + teeno fix assert).
 - **Sabak:** koi bhi exit jo group ka hissa hai, uska `group_id` record hona ZAROORI hai — warna group-scoped ledger jhoot bolega aur uspar tika har feature (basket rule, hedge-sibling close, payoff) galat chalega. "Broker pe band ho gaya" ≠ "ledger me band ho gaya".
+
+## TRAP #189 — Deep-ITM crypto option candles are stale garbage; a defined-risk backtest MUST assert `MTM <= net credit`
+
+**Symptom:** BTC weekly iron-fly backtest (02.17 port) returned Sharpe 5-6, win rate 91%,
+p=0.000 across every wing/target variant. Our own "Sharpe > 4 = red flag" rule caught it.
+
+**Root cause:** Delta option 15m candles on deep-ITM strikes are last-trade prints from
+illiquid contracts. Traced one exit bar (2026-08-19 15:15, BTC spot 68,297):
+short C-63000 printed **5,091** while long C-64000 printed **5,127** — a lower-strike call
+below a higher-strike call, which is arbitrage-impossible. The MTM built from those prints
+read **+810 on a fly whose net credit was 790** — i.e. the "profit" exceeded the structure's
+mathematical maximum. Every target-exit was firing on garbage, so the strategy "won" 91% of
+weeks including one where BTC ripped +22%.
+
+**Fix (in `scratch/delta_weekly_fly/bt_weekly_fly.py`):**
+1. Fetch BOTH call and put at every strike; mark any **ITM** leg via **put-call parity off
+   its liquid OTM twin** (`C = P + S - K`), never off its own print.
+2. Clamp every leg to no-arb bounds: call `[max(0,S-K), S]`, put `[max(0,K-S), K]`.
+3. Clamp structure MTM to `<= net credit`.
+4. Require the target to hold **2 consecutive bars** before exiting (anti-spike — same
+   confirmed-peak technique as the KILL-ALL trailing floor, TRAP #80).
+
+**Structural guard / reuse rule:** for ANY defined-risk structure (fly, condor, vertical) the
+payoff is bounded by construction — `MTM <= net credit` and `MTM >= credit - width`. **Assert
+those bounds inside the backtest loop.** A bound violation is a data bug, not a windfall; it
+would have caught this on trade #1 instead of after a full contaminated sweep. Marking an ITM
+option off its own illiquid print is the general failure — parity off the liquid OTM twin is
+the general fix, and applies to NSE lakes too wherever a strike goes deep ITM mid-hold.
+
+**Second lesson, same session:** I assumed Delta's options commission was 0.03% of notional
+(from a CLAUDE.md prose note). The real rate is **0.01%**, maker == taker, straight from
+`/v2/products` `taker_commission_rate`. That single wrong assumption flipped every variant
+net-negative and would have rejected the study for the wrong reason. **Query the exchange for
+fee/lot/tick — never carry a fee number forward from prose.**
+
+## TRAP #190 — Lookahead through the SELECTION reference time: 11.01's entire backtest edge
+
+**Where:** `_DELTA_CRYPTO/backtest_delta.py` → `build(d, ref_h=6)`, the study behind
+registry **11.01** (BTC daily iron-fly), which was live-armed on Delta testnet and gated for
+real money.
+
+**The line:**
+```python
+def build(d, ref_h=6):
+    s = spot_at(exp_ts - int(ref_h*3600))    # spot 6h BEFORE EXPIRY
+    return exp_ts, s, round(s/500)*500       # ...used to choose the ATM strike
+...
+ts = exp_ts - int(H*3600)                    # ...but ENTRY is H hours before expiry
+```
+For any `H > 6` the strike is chosen with spot from the future relative to entry. The
+deployed config is **H = 12 → 6 hours of lookahead.** Nothing else in the file is wrong:
+premiums are real, fees are real, the settle logic is defensible. One reference timestamp.
+
+**Dose-response (the original script, unmodified, its own sweep):** mean/trade by H —
+1h: −32.7 · 2h: +3.7 · 3h: −34.2 · 4h: −44.7 · 6h: −46.7 (**all no-lookahead, all ~0/neg**)
+→ 8h: +64.5 (Sh 1.25) · 10h: +157.9 (Sh 2.75) · 24h: +558.4 (**Sh 7.92, win 91%**).
+Performance scales monotonically with how much future the strike selection sees. **The
+entry-time sweep therefore selected the most-biased variant** — the optimiser optimised the bias.
+
+**Isolation (`ablate2.py`, same window/costs/everything, one line changed):**
+ATM from `spot at exp−6h` → +25,257, Sharpe **+8.46**, p=0.000;
+ATM from `spot at entry`  → −16,100, Sharpe **−4.23**, p=0.999.
+
+**Corrected re-audit (`audit_1101.py`)** — honest ATM + true 200 strike grid + real fee
+(0.01%+GST) + parity marking + no-arb clamps + measured slip: deployed 2.5%-wing config is
+**net −44,400 pts / avg −152.6 / Sharpe −4.50 / p=1.000**, train and OOS both negative.
+Independently corroborated by a direct VRP measurement (BTC daily implied 762 vs realized 772
+= **−10**; weekly −100) — i.e. BTC options are fairly priced and there is no premium to sell.
+
+**Why every existing guard missed it:**
+- It is not a cost problem, so the slippage re-cost passed. Worse, the README recorded
+  "slippage-proof" as *evidence of robustness* — it was actually a symptom: the bias was too
+  big for realistic costs to erase (lookahead + real fee + slip still Sharpe 5.11).
+- It is not a data problem, so the real-premium/real-lake checks passed.
+- p=0.001 and the train/OOS split both passed, because the bias is present in every sample.
+- The live trader is CORRECT (`delta_ironfly_trader.py:314` uses live spot at entry), so
+  live-vs-backtest code review found nothing — the divergence is in the backtest, not the code.
+
+**Structural rule — add to `NEW_STRATEGY_CHECKLIST.md` and any strategy-spec review:**
+> **Every input used to CHOOSE something — strike, symbol, expiry, size, direction, side —
+> must carry a timestamp at or before the decision instant. State that timestamp explicitly
+> in the spec.** Selection-time lookahead is invisible to cost realism, significance tests,
+> and train/OOS splits, and it survives all of them.
+
+**Cheap detector, use it on every new study:** sweep the decision lag (here, entry time) and
+plot performance against it. A monotonic ramp in the direction of "more future available" is
+lookahead, not edge. A real edge does not improve because you decided earlier.
+
+**Second-order lesson:** a headline result far better than the strategy's economic story
+(Sharpe 7.9 / 91% win on a fairly-priced underlying) deserves the same treatment as TRAP #189's
+Sharpe 5-6 — stop and find the artifact. Both this session's crypto studies looked great and
+both were artifacts; in each case the honest number was ~0 or negative.
+
+---
+
+## TRAP #191 — "What is open?" is answered by a DAY-SCOPED read everywhere → a carried position is invisible, a dead one is immortal, and the collision gate is blind (2026-08-29, LIVE, user-reported)
+
+> Commits `1d9223a` + `07e94f8` say "TRAP #189" — that number was already taken by the
+> crypto-candle trap. This is **#191**; the commits are the same work.
+
+**Three separate user complaints. One root cause.**
+
+The user reported: (1) Stats showed −₹9,347 for 28-Aug "jo tha hi nahi", (2) a position he was
+carrying didn't show at all, (3) a 9:20 BANKNIFTY leg showed open that was already closed.
+
+**(3) and (2) were real; (1) was NOT a bug — and checking that FIRST changed the whole session.**
+Zerodha Console's own "Gross realised P&L on Aug 28: −9,347.50" matched our calendar **to the
+paisa**. Had I "fixed" the number the user was sure about, I'd have broken the one number that
+was already correct. *Verify the complaint you most believe before you touch it.*
+
+### The single root cause
+
+Every "what is currently open" read in this app is **day-scoped**:
+
+```python
+order_store.trades_for(TODAY)          # api_orders, leg_collision.occupied_sec_ids, ...
+```
+
+A position entered on an EARLIER day is invisible to it, by construction. That one property
+produced all three symptoms:
+
+| Symptom | Mechanism |
+|---|---|
+| Carried position invisible | `/api/orders` carries prior-day legs over ONLY for `risk_gate.allow_overnight(strategy)` strategies. **`manual` is False** → every hand-carried overnight NRML position vanishes at the day rollover. |
+| Dead leg immortal | `_net_rows` FIFO-paired the 25-Aug broker-mirror close against an OLDER **`externally_closed`** ghost row on the same contract → the real short stayed "open" forever + a phantom +₹10,257 on 25-Aug. |
+| The −₹9,347 | `leg_collision.occupied_sec_ids()` is day-scoped → on 28-Aug it could not see the iron-fly's 24550-CE wing bought on **26-Aug** → `straddle_alert_hedged` bought the SAME contract → Zerodha's per-contract FIFO consumed the iron-fly's older lot, booking its **−₹5,281 two days early**. |
+
+The page was wrong in **both directions at once** — hiding a real leg while showing a dead one.
+
+### Fix: stop inferring "open" from our own day-scoped ledger — ask the broker
+
+The account's position book is the only view that cannot miss a carried leg (ADR-011, same
+principle as `reconcile_broker`). Two places, one idea:
+
+- `trader_dashboard._broker_open_snapshot()` + `_leg_alive_at_broker()` → reconciles the
+  **displayed** open legs. DISPLAY-ONLY.
+- `leg_collision._broker_held_sec_ids()` → unions broker-held contracts into the gate, so it
+  finally sees positional legs. Fixed in the ONE shared function → all 4 call sites inherit it.
+
+**Both fail-safe in BOTH directions** — drop only on a confident "not held", add only on a
+confident "held", any read failure → verdict `None` → exact prior behaviour. Verified by forcing
+the broker down: nothing added, gate falls back to day-scoped, page unchanged.
+
+### Reusable rules
+
+1. **A day-scoped query cannot answer a multi-day question.** Any `trades_for(today)` feeding a
+   "what do we hold / is this contract free / can I enter" decision is a latent bug the moment
+   one positional strategy exists. Grep for the pattern, don't wait for the symptom.
+2. **The broker book has no strategy attribution** — subtract the caller's OWN legs before
+   treating it as "occupied by someone else", or a strategy blocks itself off its own position.
+3. **Contract fungibility is an ACCOUNTING event, not just a risk event.** Two strategies on one
+   strike don't merely risk annihilating each other's legs — Zerodha's FIFO silently re-dates
+   P&L across days. The day total stays broker-true; the per-strategy books stop meaning anything.
+4. **When app and broker disagree, find out WHICH is wrong before writing code.** Here the app
+   matched the broker exactly and the user's memory of "positive EOD" was his own `manual` book
+   (+₹4,155 that day) — a real number, just not the one he was comparing against.
+
+### Still open (deliberately not fixed here)
+
+`_net_rows` lets **`externally_closed`** rows participate in netting (only `open`/`blocked` are
+excluded), which is what created the phantom. It is money-adjacent and a previous netting change
+regressed 507 records — it needs a whole-DB old-vs-new A/B before touching. The broker-truth pass
+HIDES the symptom on the Orders page; per-strategy views still carry it.
