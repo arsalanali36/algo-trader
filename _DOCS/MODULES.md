@@ -1094,6 +1094,7 @@ goal_planner.py — "mujhe ₹X chahiye Y date tak" → lots ka basket, aur usko
 
 - 🔧 `active_plan` — …
 - 🔧 `apply_plan` — Plan ko nifty_config me likho. Sirf lots + capital_rs.
+- 🔧 `funding_check` — Plan ko user ke ASLI broker funds ke against tolta hai.
 - 🔧 `preview_apply` — Kya-kya badlega — koi write nahi. Har row: lots old→new, cap old→new, mode (untouched),
 - 🔧 `rollback` — Pichle apply ka config backup wapas — plan store bhi peeche.
 - 🔧 `scenarios` — Safe / Balanced / Aggressive — teeno me DONO cheezein badalti hain: kitna risk lena

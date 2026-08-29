@@ -167,6 +167,29 @@ button:disabled{opacity:.45;cursor:not-allowed}
   font-size:.82rem;color:var(--muted);margin-top:14px}
 .applied b{color:var(--ink)}
 
+
+/* allocation sliders */
+.srow{display:grid;grid-template-columns:1.45fr 2fr .85fr;gap:13px;align-items:center;
+  padding:11px 0;border-bottom:1px solid var(--border-2)}
+.srow:last-child{border-bottom:0}
+@media(max-width:760px){.srow{grid-template-columns:1fr;gap:8px}}
+.wseg{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.wseg button{flex:1;font-family:"IBM Plex Mono",monospace;font-size:.7rem;padding:7px 3px;border:0;
+  background:var(--surface-2);color:var(--muted);cursor:pointer;border-right:1px solid var(--border)}
+.wseg button:last-child{border-right:0}
+.wseg button[data-on]{background:var(--gold-bg);color:var(--gold);box-shadow:inset 0 -2px 0 var(--gold)}
+.wseg button.w0[data-on]{background:var(--down-soft);color:var(--down);box-shadow:inset 0 -2px 0 var(--down)}
+.lotcell{font-family:"IBM Plex Mono",monospace;font-size:.9rem;text-align:right;white-space:nowrap}
+.lotcell .was{color:var(--faint);margin-right:5px;font-size:.78rem}
+.lotcell .now{font-weight:700}
+input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;
+  background:var(--border);width:240px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;
+  background:var(--gold);border:2px solid var(--ground);cursor:pointer}
+.capval{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:1.15rem;color:var(--gold)}
+.fund-bad{border-left:3px solid var(--down)!important;background:var(--down-soft)!important}
+.fund-ok{border-left:3px solid var(--up)!important;background:var(--up-soft)!important}
+
 /* daily log */
 .today{border:1px solid var(--border);border-radius:13px;padding:16px 18px;margin-bottom:15px;background:var(--surface-2)}
 .today.smooth{border-left:3px solid var(--up)} .today.behind{border-left:3px solid var(--gold)}
@@ -299,7 +322,30 @@ button:disabled{opacity:.45;cursor:not-allowed}
           <div class="sp"></div>
           <button class="go" onclick="solveGoal()">Basket banao →</button>
         </div>
+        <div class="card" style="margin:0 0 15px;box-shadow:none">
+          <header style="padding:12px 15px"><h3>⚖️ Aapka hisaab</h3><div class="sp"></div>
+            <span class="clbl">slider hilao → basket dobara solve</span></header>
+          <div class="body" style="padding:14px 16px">
+            <div class="clbl">Ek strategy zyada se zyada kitna hissa (expected ka)</div>
+            <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:6px">
+              <input type="range" id="gCap" min="40" max="100" step="5" value="100"
+                     oninput="capChanged(this.value)" onchange="solveGoal()">
+              <span class="capval" id="gCapVal">koi cap nahi</span>
+              <span class="mut" style="font-size:.8rem">100% = cap band</span>
+            </div>
+            <div id="wRows" style="margin-top:12px"><p class="load">Basket banao — phir yahan
+              har strategy ka slider aayega.</p></div>
+            <div style="font-size:.78rem;color:var(--faint);margin-top:10px;line-height:1.6">
+              <b style="color:var(--muted)">Off</b> = is basket me mat lo (strategy BAND nahi hoti).
+              Kam/Zyada/Max solver ko jhukate hain (0.5× / 2× / 3×) — ye <b style="color:var(--muted)">preference
+              hai, gate nahi</b>: gate-fail strategy slider se bhi basket me nahi aa sakti.
+              Cap <b style="color:var(--muted)">expected pe hai, capital pe nahi</b> — capital-share pe cap
+              lagate hi ₹5,385/lot aur ₹63,623/lot wali strategies ke beech solver deadlock ho jaata hai.
+            </div>
+          </div>
+        </div>
         <div id="goalBox"><p class="load">Target aur date bhar ke “Basket banao” dabaiye.</p></div>
+        <div id="fundBox"></div>
       </div>
     </div>
     <div id="applyBox"></div>
@@ -548,12 +594,100 @@ function renderDaily(d){
 }
 
 /* ══════════════ GOAL PLANNER ══════════════ */
+let GW = {}, GCAP = null;   // per-strategy weights + concentration cap
+const WLBL = [['0','Off'],['0.5','Kam'],['1','Normal'],['2','Zyada'],['3','Max']];
+function capChanged(v){
+  const n = +v; GCAP = n >= 100 ? null : n/100;
+  document.getElementById('gCapVal').textContent = GCAP ? n+'%' : 'koi cap nahi';
+}
+function setW(id, w){ GW[id] = +w; renderWeightRows(GOAL); solveGoal(); }
+function renderWeightRows(g){
+  const box = document.getElementById('wRows'); if(!box || !g) return;
+  box.innerHTML = (g.members||[]).map(m=>{
+    const w = (GW[m.id] === undefined) ? 1 : GW[m.id];
+    const segs = WLBL.map(([v,l])=>`<button class="${v==='0'?'w0':''}" ${(+v)===w?'data-on':''}
+        onclick="setW('${m.id}',${v})">${l}</button>`).join('');
+    const d = m.lots - m.cur_lots;
+    return `<div class="srow">
+      <div><span class="sid">${esc(m.id)}</span><br><span class="snm">${esc(m.label)}</span>
+        ${m.mode==='live'?'<span class="pill p-real">Live</span>':'<span class="pill p-paper">Paper</span>'}</div>
+      <div class="wseg">${segs}</div>
+      <div class="lotcell">${m.lots?`<span class="was">${m.cur_lots}</span><span style="color:var(--faint)">→</span> <span class="now">${m.lots}</span>
+        ${d?`<span style="font-size:.7rem;color:${d>0?'var(--up)':'var(--down)'}">${d>0?'+':''}${d}</span>`:''}`
+        :'<span style="color:var(--faint)">—</span>'}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ── funding: plan asli broker funds me baithta hai ya nahi ── */
+function renderFunding(f){
+  const box = document.getElementById('fundBox'); if(!box) return;
+  if(!f){ box.innerHTML=''; return; }
+  if(!f.ok){ box.innerHTML = `<div class="card"><div class="body" style="color:var(--muted);font-size:.85rem">
+      💳 Funding check nahi ho paya — ${esc(f.reason||'broker funds nahi mile')}</div></div>`; return; }
+  const n=f.need, h=f.have, v=f.verdict, fx=f.fix;
+  const fits = v.fits_replacing_current;
+  box.innerHTML = `
+  <div class="card">
+    <header><h3>💳 Ye plan aapke asli funds me baithta hai?</h3><div class="sp"></div>
+      <span class="clbl">live ${esc(f.broker||'broker')} account se</span></header>
+    <div class="body">
+      <div class="lanes">
+        <div class="lane"><h3>Aapke paas abhi</h3>
+          <div class="kv"><span>Live cash</span><span>${fmtR(h.live_cash||0)}</span></div>
+          <div class="kv"><span>Liquid-fund collateral</span><span>${fmtR(h.liquid_collateral||0)}</span></div>
+          <div class="kv"><span><b>Cash-equivalent</b></span><span class="pos">${fmtR(h.cash_equiv)}</span></div>
+          <div class="kv"><span>Pledged equity</span><span>${h.pledged_equity!=null?fmtR(h.pledged_equity):'—'}</span></div>
+          <div class="kv"><span>Writing capacity (2× cash-eq)</span><span>${fmtR(h.capacity)}</span></div>
+          <div class="kv"><span>Abhi use ho raha</span><span>${fmtR(h.used)}</span></div>
+        </div>
+        <div class="lane"><h3>Ye plan kya maangta hai</h3>
+          <div class="kv"><span>Short / margin legs</span><span>${fmtR(n.margin)}</span></div>
+          <div class="kv"><span>Option BUY legs (100% cash)</span><span>${fmtR(n.premium)}</span></div>
+          <div class="kv"><span><b>Total</b></span><span>${fmtR(n.total)}</span></div>
+          <div class="kv"><span><b>Isme CASH chahiye</b></span><span class="${fits?'pos':'neg'}">${fmtR(n.cash)}</span></div>
+          <div class="kv"><span>Collateral se chal jayega</span><span>${fmtR(n.collateral_ok)}</span></div>
+        </div>
+      </div>
+      <div class="verdict ${fits?'fund-ok':'fund-bad'}" style="margin-top:14px;padding:13px 16px;
+           border-radius:0 9px 9px 0;font-size:.86rem;color:var(--muted);line-height:1.6">
+        ${fits ? `<b style="color:var(--ink)">✅ Fit hai.</b> Cash chahiye ${fmtR(n.cash)}, hai ${fmtR(h.cash_equiv)}.`
+        : `<b style="color:var(--ink)">⚠ Plan abhi ke funds me fit nahi.</b>
+           Cash chahiye <b style="color:var(--ink)">${fmtR(n.cash)}</b>, hai <b style="color:var(--ink)">${fmtR(h.cash_equiv)}</b>
+           → <b class="neg">${fmtR(v.cash_gap)} kam</b>${v.capacity_gap_replace?` · capacity se ${fmtR(v.capacity_gap_replace)} upar`:''}.<br><br>
+           <b style="color:var(--ink)">Ilaaj cash hai, pledge nahi</b> — har ₹1 cash writing-capacity ₹2 badhata hai,
+           to <b style="color:var(--ink)">${fmtR(fx.add_cash)}</b> daalte hi fit ho jayega.
+           ${h.pledged_equity? `Aur pledge karne se ye gap NAHI bharta — aapka ${fmtR(h.pledged_equity)} pledged equity
+           pehle se bekaar pada hai; binding limit total collateral nahi, <b style="color:var(--ink)">2 × cash-equivalent</b> hai.`:''}`}
+      </div>
+      ${fits?'':`<div class="tw" style="margin-top:14px"><table class="t" style="min-width:560px">
+        <thead><tr><th>Bina paisa daale bhi</th><th>Kya badlega</th><th>Asar</th></tr></thead>
+        <tbody>
+          <tr><td>💵 Cash add karo</td><td>plan waisa hi</td><td class="pos">${fmtR(fx.add_cash)} → fit</td></tr>
+          ${fx.drop_lots?`<tr><td>➖ ${esc(fx.drop_lots.id)} ke ${fx.drop_lots.lots} lot kam
+            (${fx.drop_lots.from_lots}→${fx.drop_lots.from_lots-fx.drop_lots.lots})</td>
+            <td>margin ${fmtR(fx.drop_lots.frees_margin)} free</td><td class="pos">bina paisa daale fit</td></tr>`:''}
+          <tr><td>🔁 Pledged equity ka ${fmtR(fx.shift_to_liquid)} liquid-fund me</td>
+            <td>equity → liquid ETF</td><td class="pos">liquid = cash-equivalent, capacity 2× ginegi</td></tr>
+        </tbody></table></div>`}
+      <div class="body" style="padding:12px 0 0;color:var(--faint);font-size:.79rem">
+        <b style="color:var(--muted)">Do alag jawab, dono sach:</b> upar ka hisaab maanta hai ki plan aapki
+        <b style="color:var(--muted)">mojooda positions ki jagah</b> le raha hai. Agar plan unke <b style="color:var(--muted)">UPAR</b>
+        chale to sirf bacha headroom ${fmtR(h.headroom)} kaam ka hai →
+        ${v.fits_on_top?'<span class="pos">tab bhi fit</span>':`<span class="neg">${fmtR(v.capacity_gap_on_top)} se bahar</span>`}.
+        ${f.crypto_excluded?`<br>Crypto (Delta) ka ${fmtR(f.crypto_excluded)} is hisaab se bahar hai — wo alag khaata hai.`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
 async function solveGoal(){
   const body = {
     target: +document.getElementById('gTarget').value || 0,
     to_date: document.getElementById('gDate').value,
     dd_budget: +document.getElementById('gDD').value || 0,
     scope: document.getElementById('gScope').value,
+    weights: GW, max_share: GCAP,
     scenarios: true
   };
   if(!body.to_date){ alert('Date chuniye'); return; }
@@ -563,12 +697,12 @@ async function solveGoal(){
     const r = await fetch('/api/roadmap/goal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j = await r.json();
     if(!j.ok) throw new Error(j.error||'fail');
-    SCEN = j.scenarios; CURSCEN = 'balanced'; GOAL = SCEN[CURSCEN];
-    renderGoal();
+    SCEN = j.scenarios; if(!SCEN[CURSCEN]) CURSCEN='balanced'; GOAL = SCEN[CURSCEN];
+    renderGoal(); renderWeightRows(GOAL); loadFunding();
   }catch(e){ document.getElementById('goalBox').innerHTML = `<div class="err">Solve fail: ${esc(e.message||e)}</div>`; }
 }
 
-function pickScen(name){ CURSCEN=name; GOAL=SCEN[name]; renderGoal(); }
+function pickScen(name){ CURSCEN=name; GOAL=SCEN[name]; renderGoal(); renderWeightRows(GOAL); loadFunding(); }
 
 function renderGoal(){
   const g = GOAL, p = g.projection||{};
@@ -584,6 +718,8 @@ function renderGoal(){
       <div><div class="clbl">Bura drawdown (1-in-20)</div><div class="vnum neg">${fmtR(-(g.maxdd_p95||0))}</div>
         <div class="vsub">${g.maxdd_p95>g.dd_budget?'⚠ budget se bahar':'budget '+fmtR(g.dd_budget)+' ke andar ✓'}</div></div>
       <div><div class="clbl">Nuksan ka chance</div><div class="vnum">${p.p_loss||0}%</div><div class="vsub">net negative</div></div>
+      <div><div class="clbl">Sabse bada hissa</div><div class="vnum">${g.top_share!=null?g.top_share+'%':'—'}</div>
+        <div class="vsub">${g.max_share?('cap '+g.max_share+'%'+(g.cap_relaxed?' ⚠ tod ke':'')):'koi cap nahi'}</div></div>
     </div>
   </div>
 
@@ -693,6 +829,21 @@ function renderCandidates(cs, sum){
       automatic nahi</b> — ye sirf suggestion hai.
     </div>
   </div>`;
+}
+
+async function loadFunding(){
+  if(!GOAL || !GOAL.total_lots){ renderFunding(null); return; }
+  const sp = {safe:[0.5,50], balanced:[1.0,60], aggressive:[1.5,75]}[CURSCEN] || [1.0,60];
+  try{
+    const r = await fetch('/api/roadmap/goal',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({target:+document.getElementById('gTarget').value||0,
+        to_date:document.getElementById('gDate').value,
+        dd_budget:(+document.getElementById('gDD').value||0)*sp[0],
+        scope:document.getElementById('gScope').value, p_goal:sp[1],
+        weights:GW, max_share:GCAP, funding:true})});
+    const j = await r.json();
+    renderFunding(j.ok && j.plan ? j.plan.funding : null);
+  }catch(e){ renderFunding({ok:false, reason:String(e)}); }
 }
 
 /* ══════════════ APPLY ══════════════ */

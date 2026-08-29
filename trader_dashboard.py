@@ -1103,10 +1103,23 @@ def api_roadmap_goal():
         if not to_date:
             return jsonify({"ok": False, "error": "to_date chahiye"})
         if b.get('scenarios'):
-            return jsonify({"ok": True, "scenarios": _gp.scenarios(target, to_date, dd, scope, ids)})
+            return jsonify({"ok": True, "scenarios": _gp.scenarios(
+                target, to_date, dd, scope, ids,
+                weights=(b.get('weights') or None),
+                max_share=(float(b['max_share']) if b.get('max_share') else None))})
         p_goal = float(b.get('p_goal') or 60.0)
-        return jsonify({"ok": True, "plan": _gp.solve(target, to_date, dd, scope, ids,
-                                                      p_goal=p_goal)})
+        # weights = user ka per-strategy bharosa (0=Off .. 3=Max), max_share = ek
+        # strategy ka max EXPECTED hissa. Dono display/plan-level hain — order path nahi.
+        weights = b.get('weights') or None
+        ms = b.get('max_share')
+        plan = _gp.solve(target, to_date, dd, scope, ids, p_goal=p_goal,
+                         weights=weights, max_share=(float(ms) if ms else None))
+        if plan.get('ok') and b.get('funding', True):
+            try:
+                plan['funding'] = _gp.funding_check(plan)
+            except Exception as fe:
+                plan['funding'] = {"ok": False, "reason": str(fe)}
+        return jsonify({"ok": True, "plan": plan})
     except Exception as e:
         print("[roadmap-goal] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e)})

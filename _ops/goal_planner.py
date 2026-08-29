@@ -26,6 +26,7 @@ dikhata hai — solver aur display ka number kabhi diverge nahi karega), order_s
 import os
 import sys
 import json
+import math
 import shutil
 import tempfile
 import datetime as dt
@@ -113,13 +114,24 @@ def _candidates(scope="all", include_ids=None):
 
 
 def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
-          risk_mult=1.0, seed=_rp._SEED, p_goal=60.0):
+          risk_mult=1.0, seed=_rp._SEED, p_goal=60.0, weights=None, max_share=None):
     """
     Greedy integer-lot allocation:
       har step pe woh lot add karo jiska (Δ goal-probability) ÷ (Δ risk) sabse accha ho,
       jahan risk = p5 loss (bad-luck 1-in-20 nuksan).
       Rukne ki 3 wajah: DD budget khatam · goal-probability p_goal tak pahunch gayi ·
       capacity cap.
+
+    `weights` = user ka bharosa (id → 0/0.5/1/2/3). 0 = is basket me bilkul mat lo
+    (strategy BAND nahi hoti — sirf plan me nahi aati). Ye PREFERENCE hai, gate nahi:
+    gate-fail strategy weight 3 pe bhi basket me nahi aa sakti (wo `_candidates` me hi
+    nahi aati).
+
+    `max_share` = ek strategy zyada se zyada kitna **expected** hissa le sakti hai
+    (0.4–1.0). Cap CAPITAL pe nahi, EXPECTED pe hai — jaan-boojh ke: 04.03.02 ₹5,385/lot
+    aur 02.10.01 ₹63,623/lot, to capital-share pe cap lagate hi solver deadlock ho jaata
+    hai (pehla lot hamesha 100% share). Aur asli sawaal bhi yahi hai — kitna paisa EK
+    edge ke sach hone pe tika hai, margin kitna block hua wo nahi.
 
     ⚠️ Objective PROBABILITY hai, median nahi — jaan-boojh ke. "Median = target" pe rukte
     to goal hit ka chance ~50% hota (median ki definition hi yahi hai) aur page ek aisa
@@ -158,6 +170,20 @@ def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
         pg = float(ev.get("p_target", 0.0)) if target > 0 else 0.0
         return risk, pg, float(ev["p50"])
 
+    def top_share(ev):
+        """Sabse bade contributor ka expected-hissa (0..1)."""
+        ms = [m for m in (ev or {}).get("members", []) if (m.get("p50") or 0) > 0]
+        tot = sum(m["p50"] for m in ms)
+        return (max(m["p50"] for m in ms) / tot) if (ms and tot > 0) else 0.0
+
+    W = {str(k): float(v) for k, v in (weights or {}).items()}
+    cap_share = float(max_share) if max_share and float(max_share) < 1.0 else None
+    # cap tabhi binding jab basket itna bada ho ki wo satisfy ho SAKE — warna pehla hi
+    # lot 100% share hota hai aur solver 0 lots pe atak jaata (measured: cap-50 pe
+    # 1 lot ka bekaar plan)
+    min_lots_for_cap = int(math.ceil(1.0 / cap_share)) if cap_share else 0
+    cap_relaxed = False
+
     cur_risk, cur_p, cur_med = score_of(lots)
     steps = 0
     stop = "goal-reached"
@@ -169,22 +195,39 @@ def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
         if target <= 0 and cur_med > 0 and steps > 1:
             stop = "no-target"
             break
-        best = None
+        best = best_over_cap = None
         for j in range(nm):
             if lots[j] >= cands[j]["capacity_lots"]:
                 continue
+            w = W.get(str(cands[j]["id"]), 1.0)
+            if w <= 0:                                # user ne "Off" kiya
+                continue
             trial = list(lots)
             trial[j] += 1
-            r, pg, med = score_of(trial)
+            ev = _rp.evaluate(sim, trial, target=target if target > 0 else None)
+            r = float(ev.get("maxdd_p95") or max(0.0, -float(ev["p5"])))
+            pg = float(ev.get("p_target", 0.0)) if target > 0 else 0.0
+            med = float(ev["p50"])
             if r > budget:                            # DD budget = hard wall
                 continue
             gain = (pg - cur_p) if target > 0 else (med - cur_med)
             if gain <= 0:                             # ulta jaa raha? mat lo
                 continue
             d_risk = max(1.0, r - cur_risk)           # 1 = divide-by-zero guard
-            score = gain / d_risk
+            score = gain * w / d_risk                 # user ka bharosa yahan jhukta hai
+            cand = (score, j, r, pg, med)
+            over_cap = bool(cap_share and sum(trial) >= min_lots_for_cap
+                            and top_share(ev) > cap_share)
+            if over_cap:
+                if best_over_cap is None or score > best_over_cap[0]:
+                    best_over_cap = cand
+                continue
             if best is None or score > best[0]:
-                best = (score, j, r, pg, med)
+                best = cand
+        if best is None and best_over_cap is not None:
+            # SOFT fallback: cap ke andar kuch add nahi ho pa raha. Chupchaap 1-lot ka
+            # bekaar plan dene se behtar hai cap tod ke aage badhna AUR user ko batana.
+            best, cap_relaxed = best_over_cap, True
         if best is None:
             stop = "dd-budget-full" if any(
                 lots[j] < cands[j]["capacity_lots"] for j in range(nm)) else "capacity-cap"
@@ -218,6 +261,7 @@ def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
             "dropped_reason": None if lots[j] else "per-₹-risk kam — budget kisi aur pe behtar laga",
         })
 
+    top = top_share(ev)
     p_hit = float((ev or {}).get("p_target") or 0.0)
     feasible = bool(target <= 0 or p_hit >= p_goal)
     if total_lots == 0:
@@ -240,6 +284,10 @@ def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
         "verdict": verdict,
         "maxdd_p95": (ev or {}).get("maxdd_p95") or 0,
         "maxdd_median": (ev or {}).get("maxdd_median") or 0,
+        "top_share": round(100.0 * top, 1),
+        "max_share": (round(100.0 * cap_share) if cap_share else None),
+        "cap_relaxed": cap_relaxed,
+        "weights": W or None,
         "stop_reason": stop,
         "target": round(target), "to_date": to_date, "n_days": n_days,
         "dd_budget": round(float(dd_budget_rs or 0)),
@@ -262,7 +310,8 @@ SCENARIO_SPEC = {
 }
 
 
-def scenarios(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None):
+def scenarios(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
+              weights=None, max_share=None):
     """
     Safe / Balanced / Aggressive — teeno me DONO cheezein badalti hain: kitna risk lena
     (risk_mult) aur kitna chance chahiye (p_goal). Sirf budget badalne se teeno ek jaise
@@ -273,7 +322,7 @@ def scenarios(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None):
     out = {}
     for name, (mult, pg) in SCENARIO_SPEC.items():
         s = solve(target_rs, to_date, dd_budget_rs, scope, include_ids,
-                  risk_mult=mult, p_goal=pg)
+                  risk_mult=mult, p_goal=pg, weights=weights, max_share=max_share)
         s["name"] = name
         s["over_budget"] = bool(s.get("maxdd_p95", 0) > (dd_budget_rs or 0))
         out[name] = s
@@ -548,3 +597,155 @@ if __name__ == "__main__":
     else:
         s = solve(a.target, to, a.dd, a.scope)
         print(json.dumps(s, indent=1, default=str))
+
+
+# ═══════════════════════════════════════════════════════════════ FUNDING (cash vs collateral)
+#
+# Zerodha ka rule, jo plan ko chup-chaap reject karwa sakta hai chahe "available margin"
+# bahut dikh raha ho (TRAP #179, memory [[project_code3b_cash_margin_gate]]):
+#   • Option BECHNE (short/margin) ke liye margin ka **>=50% CASH** chahiye — cash +
+#     liquid-fund collateral. Pledged EQUITY sirf baaki 50% fund karta hai.
+#     → writing capacity = 2 x cash-equivalent, chahe kitna bhi stock pledged ho.
+#   • Option KHARIDNE ke liye **100% cash** — premium collateral se nahi de sakte.
+# Isliye ek plan ke liye:
+#     cash chahiye  = 0.5 x (short/margin capital) + (BUY premium)
+#     total chahiye = short/margin capital + BUY premium   (<= capacity)
+
+_BUY_BASES = ("buy",)          # registry_economics ka capital_basis
+_CRYPTO_BASES = ("crypto",)    # Delta — Zerodha funding se bilkul alag khaata
+
+
+def _capital_basis(slug):
+    try:
+        import registry_economics as _re
+        return (_re.economics(slug) or {}).get("capital_basis")
+    except Exception:
+        return None
+
+
+def funding_check(plan, broker_name=None):
+    """
+    Plan ko user ke ASLI broker funds ke against tolta hai.
+
+    Returns: kitna cash chahiye vs hai, kitna collateral se chal jayega, aur agar
+    kam pade to **kitna cash daalna hai** (pledge se ye gap nahi bharta — ye baat
+    payload me `pledge_helps=False` ke saath jaati hai).
+
+    Do alag jawab deta hai, kyunki dono sach hain aur dono matter karte hain:
+      replace_view  = plan mojooda positions ki JAGAH le raha ho
+      on_top_view   = plan unke UPAR chale (tab sirf bacha headroom kaam ka hai)
+    """
+    try:
+        import risk_gate as rg
+    except Exception as e:
+        return {"ok": False, "reason": f"risk_gate import fail: {e}"}
+
+    margin_rs = premium_rs = crypto_rs = 0.0
+    rows = []
+    for m in (plan.get("members") or []):
+        lots = int(m.get("lots") or 0)
+        if lots <= 0:
+            continue
+        cap = float(m.get("capital") or 0)
+        basis = _capital_basis(m.get("slug")) or "hedged"
+        kind = ("buy" if basis in _BUY_BASES else
+                "crypto" if basis in _CRYPTO_BASES else "margin")
+        if kind == "buy":
+            premium_rs += cap
+        elif kind == "crypto":
+            crypto_rs += cap
+        else:
+            margin_rs += cap
+        rows.append({"id": m.get("id"), "label": m.get("label"), "lots": lots,
+                     "capital": round(cap), "kind": kind})
+
+    cash_needed = 0.5 * margin_rs + premium_rs
+    total_needed = margin_rs + premium_rs
+
+    ch = rg.cash_headroom(broker_name)
+    if not ch.get("ok"):
+        return {"ok": False, "reason": "broker funds abhi nahi mile — funding check skip",
+                "need": {"margin": round(margin_rs), "premium": round(premium_rs),
+                         "cash": round(cash_needed), "total": round(total_needed)},
+                "rows": rows, "crypto": round(crypto_rs)}
+
+    bal = {}
+    try:
+        bal = rg.get_broker_balance(broker_name or rg.default_broker()) or {}
+    except Exception:
+        bal = {}
+    cash_equiv = float(ch["cash_equiv"])
+    capacity = float(ch["capacity"])
+    used = float(ch["used"])
+    headroom = float(ch["headroom"])
+    pledged = None
+    try:
+        coll = bal.get("collateral")
+        if coll is not None:
+            pledged = round(float(coll) - cash_equiv)   # equity portion (cash-eq ke bahar)
+    except Exception:
+        pledged = None
+
+    cash_gap = max(0.0, cash_needed - cash_equiv)
+    replace_gap = max(0.0, total_needed - capacity)
+    ontop_gap = max(0.0, total_needed - headroom)
+
+    # ilaaj: har Rs.1 cash-equivalent capacity Rs.2 badhata hai
+    add_cash = round(max(cash_gap, replace_gap / 2.0))
+
+    # bina paisa daale: sabse bade margin-member ke kitne lot hatane se fit ho jaye
+    drop = None
+    if cash_gap > 0 or replace_gap > 0:
+        mm = [m for m in (plan.get("members") or [])
+              if int(m.get("lots") or 0) > 0
+              and (_capital_basis(m.get("slug")) or "hedged") not in _BUY_BASES + _CRYPTO_BASES]
+        def _need_lots(m):
+            pl = float(m.get("capital") or 0) / max(1, int(m.get("lots") or 1))
+            a = math.ceil(cash_gap / (0.5 * pl)) if (cash_gap > 0 and pl) else 0
+            b = math.ceil(replace_gap / pl) if (replace_gap > 0 and pl) else 0
+            return max(a, b)
+        # aisi strategy chuno jo lots dene ke baad ZINDA bache — ek hi lot wali ko
+        # zero karke "fit" dikhana asli suggestion nahi, wo strategy hata dena hai
+        mm.sort(key=lambda m: (0 if _need_lots(m) < int(m.get("lots") or 0) else 1,
+                               -(float(m.get("capital") or 0) / max(1, int(m.get("lots") or 1)))))
+        if mm:
+            top = mm[0]
+            per_lot = float(top["capital"]) / max(1, int(top["lots"]))
+            # ek lot hatane se cash requirement 0.5*per_lot girti hai
+            n_cash = math.ceil(cash_gap / (0.5 * per_lot)) if cash_gap > 0 and per_lot else 0
+            n_tot = math.ceil(replace_gap / per_lot) if replace_gap > 0 and per_lot else 0
+            n = max(n_cash, n_tot)
+            if n > 0:
+                drop = {"id": top.get("id"), "label": top.get("label"),
+                        "lots": min(n, int(top["lots"])),
+                        "from_lots": int(top["lots"]), "per_lot": round(per_lot),
+                        "frees_margin": round(min(n, int(top["lots"])) * per_lot)}
+
+    fits_replace = (cash_gap <= 0) and (total_needed <= capacity)
+    return {
+        "ok": True,
+        "need": {"margin": round(margin_rs), "premium": round(premium_rs),
+                 "cash": round(cash_needed), "total": round(total_needed),
+                 "collateral_ok": round(total_needed - cash_needed)},
+        "have": {"live_cash": bal.get("live_cash"), "liquid_collateral": bal.get("liquid_collateral"),
+                 "cash_equiv": round(cash_equiv), "pledged_equity": pledged,
+                 "capacity": round(capacity), "used": round(used),
+                 "headroom": round(headroom), "available": ch.get("avail")},
+        "verdict": {
+            "fits_replacing_current": fits_replace,
+            "fits_on_top": (total_needed <= headroom) and (cash_gap <= 0),
+            "cash_gap": round(cash_gap), "capacity_gap_replace": round(replace_gap),
+            "capacity_gap_on_top": round(ontop_gap),
+        },
+        "fix": {
+            "add_cash": add_cash,
+            # ye line jaan-boojh ke hai: aur pledge karne se ye gap NAHI bharta, kyunki
+            # binding limit total collateral nahi, 2 x cash-equivalent hai
+            "pledge_helps": False,
+            "shift_to_liquid": add_cash,   # pledged equity -> liquid fund = cash-equivalent
+            "drop_lots": drop,
+        },
+        "rows": rows,
+        "crypto_excluded": round(crypto_rs),
+        "broker": broker_name or (rg.default_broker() if hasattr(rg, "default_broker") else None),
+    }

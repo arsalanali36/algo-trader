@@ -49,12 +49,30 @@ def daily():
 def goal():
     b = request.get_json(force=True) or {}
     if b.get("scenarios"):
+        ms0 = b.get("max_share")
         return jsonify({"ok": True, "scenarios": gp.scenarios(
             float(b.get("target") or 0), b.get("to_date"),
-            float(b.get("dd_budget") or 0), b.get("scope", "all"))})
-    return jsonify({"ok": True, "plan": gp.solve(
-        float(b.get("target") or 0), b.get("to_date"),
-        float(b.get("dd_budget") or 0), b.get("scope", "all"))})
+            float(b.get("dd_budget") or 0), b.get("scope", "all"),
+            weights=b.get("weights") or None,
+            max_share=(float(ms0) if ms0 else None))})
+    ms = b.get("max_share")
+    plan = gp.solve(float(b.get("target") or 0), b.get("to_date"),
+                    float(b.get("dd_budget") or 0), b.get("scope", "all"),
+                    p_goal=float(b.get("p_goal") or 60.0),
+                    weights=b.get("weights") or None,
+                    max_share=(float(ms) if ms else None))
+    if plan.get("ok") and b.get("funding"):
+        import sys, types
+        # harness me live broker creds nahi — asli VPS funds ke numbers se stub
+        sys.modules["risk_gate"] = types.SimpleNamespace(
+            cash_headroom=lambda bn=None: {"ok": True, "cash_equiv": 463389.73,
+                "capacity": 926779.46, "used": 462982.14, "headroom": 463797.32,
+                "avail": 1023584.97},
+            get_broker_balance=lambda bn: {"live_cash": 318543.93,
+                "liquid_collateral": 144845.8, "collateral": 1081377.91},
+            default_broker=lambda: "kite")
+        plan["funding"] = gp.funding_check(plan)
+    return jsonify({"ok": True, "plan": plan})
 
 
 @app.route("/api/roadmap/candidates")
