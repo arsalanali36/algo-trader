@@ -57,6 +57,9 @@ _API = "https://api.telegram.org/bot{token}/{method}"
 _TIMEOUT = 6                 # network — chhota, loop kabhi lambा wait na kare (background thread me bhi)
 _DEDUP_SECS = 20             # same text ka repeat is window me suppress
 
+_threads = []                # in-flight _dispatch threads (flush() inhe join karta)
+_threads_lock = threading.Lock()
+
 _DEFAULT = {
     "enabled": False,
     "bot_token": "",
@@ -67,6 +70,11 @@ _DEFAULT = {
     "notify_entries": True,
     "notify_exits": True,
     "notify_blocked": False,
+    # ── notify.error() bridge (system-health alerts, trade alerts se alag) ──
+    "alerts_enabled": True,        # notify.error() -> telegram
+    "alert_mute_sources": ["chain"],   # ye sources phone pe nahi jaayenge (bell me rehte hain)
+    "alert_renotify_hours": 6,     # wahi problem dobara ping kare to itne ghante baad
+    "alert_max_per_hour": 10,      # rate cap — channel kabhi wallpaper na bane
 }
 
 
@@ -192,8 +200,47 @@ def _dispatch(text):
                     _recent.pop(k, None)
         t = threading.Thread(target=_post, args=(text,), daemon=True)
         t.start()
+        with _threads_lock:
+            _threads.append(t)
+            if len(_threads) > 50:
+                _threads[:] = [x for x in _threads if x.is_alive()]
     except Exception:
         pass
+
+
+def flush(timeout=8.0):
+    """Pending push threads ko nikalne do.
+
+    `_dispatch` DAEMON thread se bhejta hai — long-lived loop ke liye bilkul sahi
+    (money path kabhi network pe block na ho). Par ONE-SHOT process (systemd
+    timer, CLI tool) return karte hi exit karta hai aur Python daemon threads ko
+    maar deta hai → push kabhi box se nikalta hi nahi, chup-chaap. Ye wahi shape
+    hai jo TRAP #191 me pakda gaya tha (alarm jo bhejta hi nahi).
+
+    atexit pe khud chalta hai, isliye har caller ko free milta hai — kisi ko
+    yaad rakhne ki zaroorat nahi.
+    """
+    try:
+        end = time.time() + max(0.0, float(timeout))
+        with _threads_lock:
+            pend = [t for t in _threads if t.is_alive()]
+        for t in pend:
+            left = end - time.time()
+            if left <= 0:
+                break
+            try:
+                t.join(timeout=left)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+try:
+    import atexit as _atexit
+    _atexit.register(flush)
+except Exception:
+    pass
 
 
 def _fmt(side, trad_sym, qty, price):

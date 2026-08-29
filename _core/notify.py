@@ -52,6 +52,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 LOG_FILE = DATA_DIR / "notifications.jsonl"
 READ_FILE = DATA_DIR / "notifications_read.json"
+PUSH_FILE = DATA_DIR / "notifications_pushed.json"   # telegram bridge ka state
 
 # Ek hi baat baar-baar aa rahi ho to is window ke andar count badhao, nayi
 # row mat banao.
@@ -113,6 +114,119 @@ def _rewrite(records):
         os.replace(tmp, LOG_FILE)
     except Exception as e:
         print(f"[notify] rewrite fail: {e}", flush=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TELEGRAM BRIDGE — bell ka last mile
+#
+# Detection pehle se achhi thi: 28 jagah se notify.error() nikalta hai
+# (error_watch dead-process/dead-service/log-traceback, reconcile, order_store,
+# range_trader token, config-drift, eod...). Par ye SIRF bell me girta tha, aur
+# bell 344 unread pe wallpaper ban chuki thi — yaani alarm bana hua tha par
+# user tak pahunchta nahi tha. Phone pe sirf invariant_guard jaata tha: din me
+# ek baar, 5 narrow checks.
+#
+# Ye bridge wahi last mile jodta hai, in rules ke saath (taaki phone bhi
+# wallpaper na ban jaaye):
+#   * sirf level="error"  — warn/info bell me hi rehte hain
+#   * muted sources skip  — default "chain" (option alerts, 284/344 unread wahi the)
+#   * ek problem = ek message — dobara tabhi jab renotify window nikal jaaye
+#   * resolve() pe "✓ fixed" — laal badge ka band hona bhi utna hi zaroori hai
+#   * rate cap/hour       — burst me ek summary line, phir chup
+#
+# FAIL-SAFE: poora hissa try/except me hai aur telegram_notify lazily import
+# hota hai. Ye code order-path ke exception handlers se chalta hai — yahan koi
+# bhi error trade ko todna nahi chahiye.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _push_state():
+    try:
+        with open(PUSH_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict):
+            d.setdefault("keys", {})
+            d.setdefault("hour", [])
+            return d
+    except Exception:
+        pass
+    return {"keys": {}, "hour": []}
+
+
+def _push_state_write(st):
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = str(PUSH_FILE) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(st, f)
+        os.replace(tmp, PUSH_FILE)
+    except Exception:
+        pass
+
+
+def _tg_cfg():
+    import telegram_notify as tg
+    return tg, (tg._load_config() or {})
+
+
+def _maybe_push_telegram(level, msg, dedup_key, source):
+    """Naya RED bell-alert -> phone. Kabhi raise nahi karta."""
+    try:
+        if level != "error":
+            return
+        tg, cfg = _tg_cfg()
+        if not cfg.get("alerts_enabled", True) or not tg.is_enabled():
+            return
+        muted = cfg.get("alert_mute_sources") or []
+        if str(source or "") in {str(m) for m in muted}:
+            return
+
+        now = _now_ms()
+        st = _push_state()
+        cool = float(cfg.get("alert_renotify_hours", 6)) * 3600_000
+        last = st["keys"].get(dedup_key)
+        if last and (now - int(last)) < cool:
+            return                      # abhi bataya tha — dobara nahi
+
+        # rate cap: rolling hour
+        cap = int(cfg.get("alert_max_per_hour", 10))
+        hour = [t for t in st.get("hour", []) if now - int(t) < 3600_000]
+        if len(hour) >= cap:
+            # cap ke baad ek hi baar batao ki aur bhi hain, phir chup
+            if len(hour) == cap:
+                hour.append(now)
+                st["hour"] = hour
+                st["keys"][dedup_key] = now
+                _push_state_write(st)
+                tg._dispatch("⚠️ Aur alerts aa rahe hain (rate cap %d/hr hit) — "
+                             "dashboard ki bell dekhein." % cap)
+            return
+
+        hour.append(now)
+        st["hour"] = hour
+        st["keys"][dedup_key] = now
+        _push_state_write(st)
+
+        src = _source_label(source) if source else ""
+        head = "🔴 %s" % src if src else "🔴 Alert"
+        tg._dispatch(head + chr(10) + str(msg)[:600])
+    except Exception as e:
+        print(f"[notify] telegram bridge fail: {e}", flush=True)
+
+
+def _push_telegram_resolved(dedup_key, msg=""):
+    """Jo problem phone pe gayi thi, uska theek hona bhi phone pe jaaye."""
+    try:
+        st = _push_state()
+        if dedup_key not in st.get("keys", {}):
+            return                      # ye kabhi phone pe gaya hi nahi
+        st["keys"].pop(dedup_key, None)
+        _push_state_write(st)
+        tg, cfg = _tg_cfg()
+        if not cfg.get("alerts_enabled", True) or not tg.is_enabled():
+            return
+        tg._dispatch("✅ Theek ho gaya: %s" % (str(msg or dedup_key)[:300]))
+    except Exception as e:
+        print(f"[notify] telegram resolve-push fail: {e}", flush=True)
 
 
 def push(msg, level="error", key=None, source=None):
@@ -180,6 +294,8 @@ def push(msg, level="error", key=None, source=None):
             _rewrite(recs[-(_MAX_LINES // 2):] + [rec])
         else:
             _append(rec)
+        # Bell me likh diya — ab phone tak bhi pahunchao (RED only, rate-capped).
+        _maybe_push_telegram(level, msg, dedup_key, source)
         return rec["id"]
     except Exception as e:
         print(f"[notify] push fail: {e}", flush=True)
@@ -285,13 +401,16 @@ def resolve(dedup_key):
     try:
         recs = _read_lines()
         n = 0
+        _msg = ""
         for r in recs:
             if r.get("dedup") == str(dedup_key)[:200] and not r.get("resolved"):
                 r["resolved"] = True
                 r["read"] = True
+                _msg = r.get("msg") or _msg
                 n += 1
         if n:
             _rewrite(recs)
+            _push_telegram_resolved(str(dedup_key)[:200], _msg)
         return n
     except Exception as e:
         print(f"[notify] resolve fail: {e}", flush=True)

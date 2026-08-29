@@ -249,6 +249,7 @@ strategy_safety.py — THE shared "backoffice" layer for every strategy that sel
 telegram_notify.py — trade ENTRY/EXIT ka Telegram alert (screen ghoorne se aazadi).
 
 - 🔧 `detect_chat_ids` — getUpdates se chat_id(s) nikaalo (user ne bot ko message bheja ho to).
+- 🔧 `flush` — Pending push threads ko nikalne do.
 - 🔧 `get_config_masked` — UI ke liye config — token masked (kabhi poora token wire pe nahi bhejenge).
 - 🔧 `is_enabled` — …
 - 🔧 `notify_blocked` — RMS ne entry block ki — optional alert (default off). Fail-safe.
