@@ -476,6 +476,29 @@ def preview_apply(plan):
             "confirm_token": CONFIRM_TOKEN if needs_confirm else None}
 
 
+def _rms_key(sid, config_key):
+    """RMS cap kis key ke neeche likhni hai.
+
+    Ek strategy ki DO identity ho sakti hain: uska SETTINGS block (jahan lots
+    rehte hain, jaise `_weekly_ironfly`) aur uski RMS/live IDENTITY (jo
+    `execute_signal`/`risk_gate` dekhte hain, jaise `weekly_ironfly_v1`).
+    Lots settings-block me jaate hain, par `capital_rs` **RMS identity** ke
+    neeche — warna cap chupchaap INERT ho jaata hai (2026-08-30 pe exactly yahi
+    hua: `_risk.per_strategy._weekly_ironfly.capital_rs` likha gaya jise koi
+    padhta hi nahi tha). Registry hi ye identity ka single source hai.
+    """
+    try:
+        import strategy_registry as _reg
+        rid = _reg.resolve(sid) or sid          # resolve() ID deta hai, record nahi
+        rec = _reg.get(rid) or {}
+        ck = str(rec.get("config_key") or "").strip()
+        if ck:
+            return ck
+    except Exception as e:
+        print("[goal_planner] rms-key resolve fail (%s): %s" % (sid, e), flush=True)
+    return config_key
+
+
 def apply_plan(plan, confirm=None, paper_only=False, note=""):
     """
     Plan ko nifty_config me likho. Sirf lots + capital_rs.
@@ -521,9 +544,11 @@ def apply_plan(plan, confirm=None, paper_only=False, note=""):
             continue
         node = cfg.setdefault(ck, {})
         node[field] = target_lots                  # ← sirf lots
-        ps = cfg["_risk"]["per_strategy"].setdefault(ck, {})
+        rk = _rms_key(row.get("id"), ck)           # RMS identity (≠ settings block)
+        ps = cfg["_risk"]["per_strategy"].setdefault(rk, {})
         if row["cap_to"]:
             ps["capital_rs"] = int(row["cap_to"])  # ← aur capital cap
+        row["rms_key"] = rk
         applied.append(row)
 
     # ── atomic write + readback verify
@@ -541,7 +566,8 @@ def apply_plan(plan, confirm=None, paper_only=False, note=""):
     for row in applied:
         ck, field = row["config_key"], (row["lots_field"] or "lots")
         got = (back.get(ck) or {}).get(field)
-        cap_got = ((back.get("_risk") or {}).get("per_strategy", {}).get(ck) or {}).get("capital_rs")
+        _rk = row.get("rms_key") or ck
+        cap_got = ((back.get("_risk") or {}).get("per_strategy", {}).get(_rk) or {}).get("capital_rs")
         ok = (int(got or 0) == int(row["lots_to"] or 0))
         verify.append({"id": row["id"], "config_key": ck, "lots_written": got,
                        "cap_written": cap_got, "ok": ok})
