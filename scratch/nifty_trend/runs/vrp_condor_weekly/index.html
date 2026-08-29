@@ -118,6 +118,7 @@
       <span class="livechip" id="livechip" style="background:#3a2e0c;color:#e8c14a;border-color:#5c4a12">● FORWARD-PAPER · fails DSR</span>
     </div>
 
+
     <div id="lotStrip" style="display:none;align-items:center;gap:16px;flex-wrap:wrap;padding:9px 14px;background:var(--panel);border:1px solid var(--bd);border-radius:9px;margin-bottom:12px">
       <span style="font-weight:700;font-size:12px">📦 Lot economics</span>
       <span class="seg" style="align-items:center">
@@ -130,8 +131,7 @@
       <span>Tax <b id="lsTax" class="mut">—</b></span>
       <span>Capital <b id="lsCap" style="color:var(--bench)">—</b></span>
       <span class="mut" id="lsNote" style="font-size:11px"></span>
-    </div>
-    <div class="controls">
+    </div>    <div class="controls">
       <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
         <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
         <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
@@ -669,14 +669,27 @@ document.addEventListener('keydown',e=>{if(!document.getElementById('tModal').cl
   }catch(err){}
 })();
 renderAll();
-// ---- Lot-economics strip: reuses /api/registry-economics (same authority as /registry2),
-// so Net/Tax/Capital scale to any lot count. Sharpe/Win%/DD are ratios (lot-independent).
-var _lsN=1;
+// ---- Lot-economics strip + WHOLE-DASHBOARD lot scaling. The strip's Net/Tax/Capital come
+// from /api/registry-economics (same authority as /registry2). Changing lots also rescales
+// every ₹ figure on the page (PERFORMANCE panel, KPI cards, trade tables) by wrapping the
+// combo accessor C(): only ₹ fields scale; % / ratios (Sharpe, Win%, MaxDD, CAGR) never do.
+var _lsN=1, _NATIVE_LOTS=1, _LOTMULT=1;
 (function(){
+  // scale ₹ metrics + per-trade ₹ by _LOTMULT (via C()); ratios/% untouched.
+  var _rawC=C, _MK=['net_abs','start_cap','final_cap','fees','expectancy','avg_win','avg_loss',
+                    'largest_win','largest_loss','gross_profit','gross_loss','avg_trade'];
+  C=function(){ var c=_rawC(); if(!c||_LOTMULT===1) return c;
+    var sc={},k; for(k in c) sc[k]=c[k];
+    if(c.metrics){ var m={}; for(k in c.metrics) m[k]=c.metrics[k];
+      _MK.forEach(function(x){ if(typeof m[x]==='number') m[x]=m[x]*_LOTMULT; }); sc.metrics=m; }
+    if(c.all_trades){ sc.all_trades=c.all_trades.map(function(t){ var t2={},k2; for(k2 in t) t2[k2]=t[k2];
+      ['gross','fee','pnl'].forEach(function(x){ if(typeof t2[x]==='number') t2[x]=t2[x]*_LOTMULT; }); return t2; }); }
+    return sc;
+  };
   var mm=location.pathname.match(/\/runs\/([^\/]+)\//);
   var slug=mm?mm[1]:null;
   var q=new URLSearchParams(location.search);
-  _lsN=Math.max(1, parseInt(q.get('lots'),10) || ((R.meta&&R.meta.lots)||1));
+  _lsN=Math.max(1, parseInt(q.get('lots'),10) || 1);
   var ECON=null;
   function draw(){
     var s=document.getElementById('lotStrip'); if(!s)return;
@@ -686,15 +699,21 @@ var _lsN=1;
     var gross=(ECON.gross_per_lot||0)*_lsN, tax=(ECON.flat_charge||0)+(ECON.per_lot_charge||0)*_lsN, net=gross-tax;
     var cap=(ECON.capital_per_lot!=null)?ECON.capital_per_lot*_lsN:null;
     var est=(ECON.capital_kind&&ECON.capital_kind.indexOf('~')>=0)?'~':'';
-    var nEl=document.getElementById('lsNet'); nEl.textContent=(net>=0?'+':'')+'₹'+inr(Math.abs(net)); nEl.className=net>=0?'pos':'neg';
-    document.getElementById('lsTax').textContent='-₹'+inr(Math.abs(tax));
-    document.getElementById('lsCap').textContent=(cap!=null)?(est+'₹'+inr(cap)):'—';
-    document.getElementById('lsNote').textContent='at '+_lsN+' lot(s) · charges recomputed (flat brokerage does not scale) · Sharpe/Win%/DD unchanged';
+    var nEl=document.getElementById('lsNet'); nEl.textContent=(net>=0?'+':'-')+inr(Math.abs(net)); nEl.className=net>=0?'pos':'neg';
+    document.getElementById('lsTax').textContent='-'+inr(Math.abs(tax));
+    document.getElementById('lsCap').textContent=(cap!=null)?(est+inr(cap)):'—';
+    document.getElementById('lsNote').textContent='at '+_lsN+' lot(s) · whole page scaled · flat brokerage does not scale · Sharpe/Win%/DD/% unchanged';
   }
-  window._lsSet=function(v){_lsN=Math.max(1, parseInt(v,10)||1); draw();};
+  function apply(){
+    _LOTMULT = ECON ? (_lsN / _NATIVE_LOTS) : 1;   // native lots = ECON.lots_in_run (authoritative)
+    try{ renderAll(); }catch(e){}
+    draw();
+  }
+  window._lsSet=function(v){ _lsN=Math.max(1, parseInt(v,10)||1); apply(); };
   if(slug){ fetch('/api/registry-economics',{cache:'no-store'})
     .then(function(r){return r.json();})
-    .then(function(j){ var e=j&&j.econ; ECON=e?(e[slug]||e[slug.toLowerCase()]||null):null; draw(); })
+    .then(function(j){ var e=j&&j.econ; ECON=e?(e[slug]||e[slug.toLowerCase()]||null):null;
+      _NATIVE_LOTS=Math.max(1, (ECON&&ECON.lots_in_run) || (R.meta&&R.meta.lots) || 1); apply(); })
     .catch(function(){}); }
 })();
 </script>
