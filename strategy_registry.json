@@ -186,17 +186,6 @@
    "hold": "Overnight",
    "structure": "Naked ATM"
   },
-  "01.01": {
-   "name": "Chain-Zone â€” Long ATM",
-   "config_key": "chainzone_v1",
-   "slug": "chain_zone_longatm",
-   "live_file": "strategies/live/04_chainzone_trader.py",
-   "status": "paper",
-   "legs": 1,
-   "instrument": "NIFTY",
-   "hold": "Intraday",
-   "structure": "Naked ATM"
-  },
   "01.02": {
    "name": "Chain-Zone â€” Credit spread",
    "config_key": null,
@@ -729,6 +718,26 @@
    "structure": "Hedged vertical (ATM sell + ~0.25Î” wing)",
    "desc": "04.03 (naked Pine2Python mirror) ka HEDGED twin. Ars-chain signal SELLs the directional ATM option, and a ~0.25-delta wing is BOUGHT for defined risk (credit/debit vertical). 4L capital cap, 5 lots, â‚¹4,000 whole-basket SL/Target (position_exit_rules, ordered shorts-first exit) PLUS the strategy's own zone/ATR exit â€” whichever hits first. Wings-first unwind-safe entry (never naked). PAPER, NOT backtested as a spread (Rule 10 â€” forward-validate). Reuses range_trader signal engine + execution_gateway + strategy_safety.wing_by_delta. Config gitignored â†’ apply on VPS separately."
   },
+  "04.03.02": {
+   "name": "Ars chain - Directional BUY (long ATM)",
+   "config_key": "chainzone_v1",
+   "aliases": [
+    "chainzone_v1",
+    "chain_zone_longatm",
+    "01.01"
+   ],
+   "slug": "chain_zone_longatm",
+   "live_file": "strategies/live/04_chainzone_trader.py",
+   "status": "paper",
+   "role": "child",
+   "parent": "04.03",
+   "transport": "python",
+   "legs": 1,
+   "instrument": "NIFTY",
+   "hold": "Intraday",
+   "structure": "Long ATM (BUY on signal direction)",
+   "desc": "The WINNING structure of the Auto-Rev-Chain idea: on each chain-zone signal, BUY the directional ATM option (long gamma keeps big winners uncapped). Same signal family as 04.03/04.04 but the OPPOSITE structure - they SELL (short gamma caps winners so both backtest NEGATIVE), this BUYS. Backtest (chain_zone_longatm, real premium + date-aware charges + DOM slip, 2018-2026, 1806 trades): BS Sharpe 1.95 / net +69% / maxDD -3.1% / PF 1.49; real-cost Sharpe 1.87, train 1.83 ~ OOS 1.96 (no decay), p=0.000. BUY = margin light (pay premium, no SPAN/cash-margin) so it scales and sidesteps the cash-margin block that stops the SELL sellers. Uses the validated single-source chain_zone.py signal via 04_chainzone_trader.py. Re-homed from 01.01 (Chain-Zone research family); the credit/naked/positional structure-variants stay there for comparison. PAPER - forward-validate before real money (Rule 10)."
+  },
   "02.17": {
    "name": "Weekly Iron-Fly (day-after-expiry)",
    "config_key": "weekly_ironfly_v1",
@@ -744,13 +753,13 @@
    "name": "IV-pop M-rollover Iron-Fly",
    "config_key": "m_pattern_ironfly_v1",
    "slug": "m_pattern_ironfly",
-   "live_file": null,
-   "status": "research",
+   "live_file": "_ops/m_pattern_ironfly_live.py",
+   "status": "paper",
    "legs": 4,
    "instrument": "NIFTY",
    "hold": "Intraday-signal / ~1-day",
    "structure": "Short ATM straddle + ±250 wings (iron-fly) entered on an ATM combined-premium double-top (IV-pop) rollover, 50% credit target",
-   "note": "Forward-paper candidate: entry-timing permutation p=0.009 REAL, but Sharpe 0.64<1 and config from a 9-cell search -> PAPER before real money (Rule 10). Backtest artifact only; live paper-firing loop not yet built."
+   "note": "PAPER forward-paper. Entry-timing permutation p=0.009 REAL, but Sharpe 0.64<1 and config from a 9-cell search -> PAPER before real money (Rule 10). Signal single-source strategies/signals/m_pattern.py (backtest==live, ADR-010). Live loop _ops/m_pattern_ironfly_live.py (enabled=false)."
   },
   "11.01": {
    "name": "Delta BTC Iron-Fly (daily, real premium)",
