@@ -166,18 +166,29 @@ def scan():
             except Exception:
                 cap_per_lot = None
 
+        # ── Status = mode AUR on-flag, DONO. Sirf `mode` padhna jhoot bolta hai:
+        # 02.07.01 config me `mode: live` tha par `active: False` — aur uska
+        # event-driven fire-path ki PEHLI line hi `if not active: return` hai,
+        # yaani wo kabhi order bhejti hi nahi thi. Scanner use "Live" dikha raha tha.
+        # Ab "Live · OFF" aur "Live · running" alag dikhte hain, aur "⚠ live hai par
+        # gate fail" wala warning sirf tab jab sach me paisa laga ho.
         wired = bool(ck and live.get("configured"))
+        mode = "live" if live.get("mode") == "live" else "paper"
+        on = bool(live.get("on"))
         if not wired:
             status = "no-live-file"      # research-only: pehle live trader banana padega
-        elif live.get("mode") == "live":
-            status = "live"
+            status_label = "Live file nahi"
         else:
-            status = "paper"
+            status = ("live" if on else "live-off") if mode == "live" else \
+                     ("paper" if on else "paper-off")
+            status_label = ("Live · running" if on else "Live · OFF") if mode == "live" else \
+                           ("Paper · running" if on else "Paper · OFF")
 
         out.append({
             "id": sid, "label": name, "slug": slug, "config_key": ck,
             "in_portfolio": bool(sid and sid in member_ids),
-            "status": status, "wired": wired,
+            "status": status, "status_label": status_label,
+            "mode": mode, "on": on, "wired": wired,
             "cur_lots": live.get("lots") or 0, "on": live.get("on"),
             "sharpe": round(sharpe, 2) if sharpe is not None else None,
             "cost_basis": cost_basis,
@@ -214,7 +225,8 @@ def eligible_members(include_unwired=False):
         out.append({
             "id": c["id"] or c["slug"], "label": c["label"], "slug": c["slug"],
             "config_key": c["config_key"], "run_lots": None,
-            "capacity_lots": c["capacity_lots"], "mode": c["status"],
+            "capacity_lots": c["capacity_lots"], "mode": c["mode"],
+            "on": c["on"], "status_label": c["status_label"],
             "cur_lots": c["cur_lots"], "book": 0,
             "candidate": True, "in_portfolio": c["in_portfolio"],
         })
@@ -227,10 +239,16 @@ def summary():
     return {
         "total": len(cs),
         "eligible": len(el),
-        "eligible_live": len([c for c in el if c["status"] == "live"]),
-        "eligible_paper": len([c for c in el if c["status"] == "paper"]),
+        # "live" = sach me chal rahi (mode live AUR on) — config me pada `mode: live`
+        # akela kaafi nahi, wo strategy band bhi ho sakti hai
+        "eligible_live": len([c for c in el if c["mode"] == "live" and c["on"]]),
+        "eligible_live_off": len([c for c in el if c["mode"] == "live" and not c["on"]]),
+        "eligible_paper": len([c for c in el if c["mode"] == "paper" and c["wired"]]),
         "eligible_unwired": len([c for c in el if not c["wired"]]),
         "rejected": len([c for c in cs if c["verdict"] == "rejected"]),
+        # sabse zaroori line: real paisa laga hai par gate fail
+        "live_but_gate_fail": len([c for c in cs
+                                   if c["verdict"] != "eligible" and c["mode"] == "live" and c["on"]]),
     }
 
 
@@ -241,5 +259,5 @@ if __name__ == "__main__":
         mark = {"eligible": "OK ", "weak": "~~ ", "rejected": "XX "}[c["verdict"]]
         print(f"{mark}{(c['id'] or '--'):<9} {c['label'][:44]:<44} "
               f"Sh {str(c['sharpe']):>5} p {str(c['p_value']):>6} "
-              f"tr {c['trades']:>5} {c['status']:<12} "
+              f"tr {c['trades']:>5} {c['status_label']:<14} "
               + ("; ".join(c["fails"]) or "; ".join(c["flags"]))[:80])

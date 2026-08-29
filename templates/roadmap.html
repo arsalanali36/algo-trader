@@ -644,14 +644,20 @@ async function loadCandidates(){
 
 function candRow(c){
   const V = {eligible:['✅','var(--up)'], weak:['🟡','var(--gold)'], rejected:['⛔','var(--down)']}[c.verdict];
-  const st = c.status==='live' ? '<span class="pill p-real">Live</span>'
-    : c.status==='paper' ? '<span class="pill p-paper">Paper</span>'
-    : '<span class="pill" style="color:var(--faint);border-color:var(--border)">Live file nahi</span>';
-  // sabse kaam ki line: gate paas + abhi paper = "live karne layak"
-  const sugg = (c.verdict==='eligible' && c.status==='paper')
-      ? '<span class="pill p-gold">👉 live karne layak</span>'
-      : (c.verdict!=='eligible' && c.status==='live')
-      ? '<span class="pill p-bad">⚠ live hai par gate fail</span>' : '';
+  // Status mode+on DONO se — sirf `mode: live` dekhna jhoot bolta hai (strategy band
+  // bhi ho sakti hai; 02.07.01 exactly waisi thi). OFF wali dim dikhti hai.
+  const st = !c.wired ? '<span class="pill" style="color:var(--faint);border-color:var(--border)">Live file nahi</span>'
+    : c.mode==='live'
+      ? (c.on ? '<span class="pill p-real">Live · running</span>'
+              : '<span class="pill" style="color:var(--faint);border-color:var(--border)">Live · OFF</span>')
+      : (c.on ? '<span class="pill p-paper">Paper · running</span>'
+              : '<span class="pill" style="color:var(--faint);border-color:var(--border)">Paper · OFF</span>');
+  // gate paas + abhi paper = "live karne layak" (band ho to wo bhi bata do)
+  const sugg = (c.verdict==='eligible' && c.wired && c.mode==='paper')
+      ? `<span class="pill p-gold">👉 live karne layak${c.on?'':' (abhi OFF)'}</span>`
+      // warning sirf tab jab sach me paisa laga ho — mode live AUR chal rahi ho
+      : (c.verdict!=='eligible' && c.mode==='live' && c.on)
+      ? '<span class="pill p-bad">⚠ live chal rahi hai par gate fail</span>' : '';
   const why = c.fails.length ? c.fails.join(' · ')
             : (c.flags.length ? c.flags.join(' · ') : 'saare gate clear');
   return `<tr${c.verdict==='rejected'?' style="opacity:.55"':''}>
@@ -670,8 +676,9 @@ function renderCandidates(cs, sum){
   document.getElementById('candBox').innerHTML = `
   <div class="card">
     <header><h3>Deploy-gate har strategy pe</h3><div class="sp"></div>
-      <span class="clbl">${sum.eligible}/${sum.total} paas · ${sum.eligible_paper} paper (live karne layak)
-        · ${sum.eligible_unwired} ka live file nahi · ${sum.rejected} reject</span></header>
+      <span class="clbl">${sum.eligible}/${sum.total} paas · ${sum.eligible_live} live chal rahi
+        · ${sum.eligible_paper} paper (live karne layak) · ${sum.eligible_unwired} ka live file nahi
+        · ${sum.rejected} reject${sum.live_but_gate_fail ? ` · <span style="color:var(--down)">⚠ ${sum.live_but_gate_fail} live chal rahi hai jo gate fail karti hai</span>` : ''}</span></header>
     <div class="tw"><table class="t">
       <thead><tr><th>Strategy</th><th>Abhi</th><th>Sharpe</th><th>p</th><th>Trades</th>
         <th>MaxDD</th><th>Portfolio</th><th>Faisla kyun</th></tr></thead>
