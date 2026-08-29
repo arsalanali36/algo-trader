@@ -304,7 +304,7 @@ def _write_status(date, violations):
     except Exception:
         pass
 
-def run(date=None, alert=False, log=print):
+def run(date=None, alert=False, log=print, sync_push=False):
     """Check + (optionally) fire loud alerts. Returns the violation list.
     Read-only. Call every ~120s from pos_monitor_loop (alert=True).
 
@@ -338,17 +338,27 @@ def run(date=None, alert=False, log=print):
             if _new_reds or _cleared:
                 try:
                     import telegram_notify as _tg
+                    # _dispatch() fires a DAEMON thread and returns instantly. In the
+                    # long-lived monitor loop that is exactly right (never block the
+                    # money path on a network call). But in the one-shot timer run the
+                    # process EXITS immediately after — Python kills daemon threads on
+                    # exit, so the push would silently never leave the box, and the
+                    # daily pre-market alarm would be quietly dead. Same shape as
+                    # TRAP #120 (a scheduled call that fails in silence). So: the CLI /
+                    # timer path sends SYNCHRONOUSLY (_post never raises, has its own
+                    # timeout); the loop keeps the non-blocking path.
+                    _send = _tg._post if sync_push else _tg._dispatch
                     if _tg.is_enabled():
                         _NL = chr(10)
                         if _new_reds:
                             _body = _NL.join("- " + x.detail for x in _new_reds[:8])
                             _more = (_NL + "... +%d aur" % (len(_new_reds) - 8)) if len(_new_reds) > 8 else ""
-                            _tg._dispatch(
+                            _send(
                                 "APP vs ZERODHA MISMATCH (%d)" % len(_new_reds) + _NL
                                 + _body + _more + _NL + _NL
                                 + "App aur broker alag hain - check karo.")
                         else:
-                            _tg._dispatch("App aur Zerodha ab match karte hain "
+                            _send("App aur Zerodha ab match karte hain "
                                           "- mismatch clear ho gaya.")
                 except Exception as _te:
                     log("[invariant_guard] telegram push failed: %s" % _te, flush=True)
@@ -362,7 +372,7 @@ def main():
     date = _ist_today()
     as_json = "--json" in sys.argv
     alert = "--alert" in sys.argv
-    v = run(date, alert=alert)
+    v = run(date, alert=alert, sync_push=True)   # one-shot: must not exit before the push lands
     if as_json:
         print(json.dumps([x.as_dict() for x in v]))
     else:
