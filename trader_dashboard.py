@@ -7949,6 +7949,103 @@ def _broker_position_product(broker, broker_name, t_sym, sec_id, fallback='NRML'
 
 _nrml_syms_cache = {"ts": 0.0, "syms": set()}
 
+# ── Broker-truth liveness for DISPLAYED open positions ───────────────────────
+# WHY (user-reported 2026-08-29): the Orders page carried prior-day legs over ONLY
+# for strategies whose risk_gate.allow_overnight() is True. `manual` is False — so
+# a position the USER carried overnight (4 real NRML NIFTY legs, live at Zerodha)
+# was completely INVISIBLE the next day, while a long-dead leg (an Aug-expired
+# BANKNIFTY short whose real close DID exist in the DB but got FIFO-mis-paired
+# against an older externally_closed ghost) kept showing as open. The page was
+# wrong in BOTH directions at once.
+#
+# Fix = ask the broker. The account's own position book is the only authority on
+# what is open (ADR-011, same principle as reconcile_broker). DISPLAY-ONLY: this
+# never places, cancels or suppresses an order, and never touches PAPER legs —
+# a paper leg has no broker position by definition, so it is always left alone.
+#
+# FAIL-SAFE IN BOTH DIRECTIONS: a leg is only DROPPED on a confident "not at the
+# broker" (or a contract that no longer exists / has expired), and only ADDED on a
+# confident "yes, held". Any read/resolve failure -> verdict None (unknown) -> the
+# page behaves exactly as it did before this change.
+_broker_open_cache = {"ts": 0.0, "snap": {}, "ok": False}
+
+
+def _broker_open_snapshot(max_age=30):
+    """({kite_tradingsymbol: signed_net_qty}, ok) — what the broker holds NOW.
+
+    Cached ~30s so a page render with N legs costs at most ONE positions call
+    (same shape as _broker_nrml_syms). Kite-only: Dhan is data/manual-only here
+    (project_code3b_dhan_manual_kite_algo), and the algo's executing broker is
+    Kite. ok=False -> caller must treat every verdict as unknown."""
+    import time as _t
+    now = _t.time()
+    if now - _broker_open_cache["ts"] < max_age and _broker_open_cache["ok"]:
+        return _broker_open_cache["snap"], True
+    try:
+        from brokers.kite_broker import KiteBroker
+        snap = {}
+        for _p in (KiteBroker().positions_detailed() or []):
+            try:
+                q = int(_p.get('qty') or 0)
+            except (TypeError, ValueError):
+                continue
+            ks = str(_p.get('kite_sym') or '')
+            if ks and q:
+                snap[ks] = snap.get(ks, 0) + q
+        _broker_open_cache.update(ts=now, snap=snap, ok=True)
+        return snap, True
+    except Exception as e:
+        print(f"[open-truth] broker position read failed ({e}) — display falls back "
+              f"to the DB-only view", flush=True)
+        # Keep the last-good snapshot but report NOT ok: a stale book must never
+        # be authoritative enough to hide a real leg.
+        return _broker_open_cache["snap"], False
+
+
+def _leg_alive_at_broker(p, snap, ok):
+    """Is this displayed open leg REALLY open? True / False / None (unknown).
+
+    Order of authority:
+      1. PAPER / CAPITAL_BLOCKED legs      -> None (never judged by a broker book)
+      2. the broker's own position book    -> exact answer, when it resolves
+      3. contract liveness (scrip master)  -> a contract that is gone/expired
+                                              cannot be an open position
+    Anything else -> None. Callers KEEP on None."""
+    try:
+        if str(p.get('mode') or '').lower() != 'live':
+            return None                       # paper never reaches the broker
+        if 'CAPITAL_BLOCKED' in (p.get('tags') or []):
+            return None                       # never executed; has its own panel
+        sec_id = str(p.get('sec_id') or '').strip()
+        t_sym = str(p.get('sym') or '')
+        if ok and sec_id and t_sym:
+            try:
+                from brokers import kite_broker as _kb
+                _k = _kb.KiteBroker()._get_kite()
+                ksym = _kb.resolve_kite_symbol(_k, t_sym, sec_id)
+                if ksym:
+                    return ksym in snap       # confident, both ways
+            except Exception:
+                pass
+        # Broker unreachable, or the contract no longer resolves there (an expired
+        # option is dropped from the instrument list). Fall back to the scrip
+        # master: no expiry on record, or an expiry already PAST, means the
+        # contract cannot be held. Expiry == today is still live (settles at EOD).
+        if sec_id:
+            try:
+                import dhan_master as _dm
+                exp = _dm.get_expiry_for_sec_id(sec_id)
+            except Exception:
+                return None
+            _today = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+            if not exp:
+                return False                  # not in the master at all -> gone
+            return None if str(exp) >= _today else False
+    except Exception:
+        return None
+    return None
+
+
 def _broker_nrml_syms(broker, broker_name):
     """Set of Kite tradingsymbols the broker currently holds as NRML (overnight).
     Lets the EOD loop RESPECT a manual MIS->NRML conversion the user did directly
@@ -9588,6 +9685,40 @@ def api_orders():
                 data.setdefault('details', []).append(t)
     except Exception:
         pass
+    # ── Broker-truth pass over the DISPLAYED open legs (DISPLAY-ONLY) ────────
+    # The day-scoped view + the allow_overnight allow-list get this wrong in both
+    # directions (see _leg_alive_at_broker). Reconcile what we SHOW against the
+    # account's real position book: drop only on a confident "not held", add only
+    # on a confident "held". Broker unreachable -> nothing changes.
+    try:
+        _snap, _ok = _broker_open_snapshot()
+        _kept, _dropped = [], []
+        for _p in (data.get('open') or []):
+            if _leg_alive_at_broker(_p, _snap, _ok) is False:
+                _dropped.append(_p.get('sym'))
+            else:
+                _kept.append(_p)
+        data['open'] = _kept
+        _key = lambda _q: (str(_q.get('sec_id') or ''), str(_q.get('entry') or ''),
+                           str(_q.get('entry_date') or ''), str(_q.get('strategy') or ''))
+        _seen = {_key(_p) for _p in data['open']}
+        _added = 0
+        for _p in (_rng.get('open') or []):
+            if _key(_p) in _seen:
+                continue
+            if _leg_alive_at_broker(_p, _snap, _ok) is not True:
+                continue                       # only ADD on a confident yes
+            if (_p.get('entry_date') or date) < date:
+                _p['carried_over'] = True
+            data.setdefault('open', []).append(_p)
+            _seen.add(_key(_p))
+            _added += 1
+        if _dropped or _added:
+            print(f"[open-truth] {date}: dropped {len(_dropped)} dead leg(s) {_dropped}, "
+                  f"added {_added} broker-held leg(s) the day view missed", flush=True)
+    except Exception as _bt:
+        print(f"[open-truth] pass skipped ({_bt}) — DB-only view", flush=True)
+
     data['date'] = date
     data['filters'] = {f: order_store.distinct(f, date)
                        for f in ('source', 'mode', 'strategy', 'broker')}
