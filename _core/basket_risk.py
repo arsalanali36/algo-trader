@@ -112,7 +112,15 @@ def resolve(strategy_id, cfg, lots=None, lot_size=None, own_exit_pt=None,
     if ls > 0 and lots > 0:
         out["sl_points"] = out["sl_rs"] / (ls * lots)
 
-    own_pt = own_exit_pt if own_exit_pt is not None else cfg.get("sl_pt")
+    # ⚠️ `sl_pt` sirf tab valid hai jab strategy sach me points-exit pe chalti ho.
+    # 02.10.01 jaisi hedged strategies `exit_mode="basket_rs"` pe hain — unme
+    # `sl_pt` naked PARENT ka leftover hai aur kabhi fire hota hi nahi. Use
+    # "validated exit" maan lena = JHOOTHA conflict alert = guard wallpaper ban
+    # jaata hai. Isliye basket_rs pe sl_pt ko haath nahi lagate.
+    if own_exit_pt is None and str(cfg.get("exit_mode") or "") == "basket_rs":
+        own_pt = 0.0
+    else:
+        own_pt = own_exit_pt if own_exit_pt is not None else cfg.get("sl_pt")
     own_pt = _f(own_pt, 0.0)
     if own_pt > 0 and ls > 0 and lots > 0:
         own_rs = own_pt * ls * lots
@@ -205,32 +213,46 @@ def sizing(strategy_id, cfg, lot_size, own_exit_pt=None,
     out = {"ok": False, "lots": 0, "risk_budget_rs": 0.0, "per_lot_risk_rs": 0.0,
            "sl_rs": 0.0, "target_rs": 0.0, "stop_pt": stop_pt, "note": ""}
 
-    missing = [n for n, v in (("capital_rs", cap), ("risk_pct", pct),
-                              ("validated stop (sl_pt)", stop_pt), ("lot_size", ls)) if v <= 0]
+    # Per-lot risk teen shakl me aa sakta hai — strategy ka structure decide karta hai:
+    #   (a) stop-based      : risk/lot = stop_points × lot_size      (e.g. 02.10.01, 50pt)
+    #   (b) defined-risk     : risk/lot = wing − credit               (e.g. 02.17 iron-fly)
+    #   (c) long option BUY  : risk/lot = premium × lot_size          (e.g. 04.03.02, max loss = premium)
+    # (b)/(c) me koi "stop points" hota hi nahi — unke liye `risk_per_lot_rs`
+    # SEEDHA do. Formula aage wahi rehta hai; sirf per-lot risk ka source badalta hai.
+    explicit = _f(cfg.get("risk_per_lot_rs"), 0.0)
+
+    need = [("capital_rs", cap), ("risk_pct", pct)]
+    if explicit <= 0:
+        need += [("validated stop (sl_pt) ya risk_per_lot_rs", stop_pt), ("lot_size", ls)]
+    missing = [n for n, v in need if v <= 0]
     if missing:
         out["note"] = ("risk-first sizing OFF — " + ", ".join(missing) + " nahi hai; "
                        "purana static qty chalega (koi number guess nahi kiya)")
         return out
 
     budget = cap * pct / 100.0
-    per_lot = stop_pt * ls
+    per_lot = explicit if explicit > 0 else (stop_pt * ls)
+    if explicit > 0:
+        out["stop_pt"] = None       # is shakl me stop-points ka matlab hi nahi
     lots = int(budget // per_lot)
 
     out.update(risk_budget_rs=budget, per_lot_risk_rs=per_lot, lots=lots)
     if lots < 1:
+        _how = ("%.0f pt × %d" % (stop_pt, ls)) if explicit <= 0 else "defined risk/lot"
         out["note"] = ("is risk-budget me 1 lot bhi nahi aata — 1 lot ka risk ₹%.0f "
-                       "(%.0f pt × %d) hai par budget sirf ₹%.0f (%.2f%% of ₹%.0f). "
-                       "Ya risk%% badhao, ya capital, ya stop chhota karo."
-                       % (per_lot, stop_pt, ls, budget, pct, cap))
+                       "(%s) hai par budget sirf ₹%.0f (%.2f%% of ₹%.0f). "
+                       "Ya risk%% badhao, ya capital, ya risk/lot chhota karo."
+                       % (per_lot, _how, budget, pct, cap))
         return out
 
     tgt_mult = _f(cfg.get("target_r_multiple"), 0.0)
     out["ok"] = True
     out["sl_rs"] = lots * per_lot
     out["target_rs"] = (out["sl_rs"] * tgt_mult) if tgt_mult > 0 else                        _f(cfg.get("basket_target_rs"), out["sl_rs"])
+    _how = ("%.0f pt × %d" % (stop_pt, ls)) if explicit <= 0 else "defined risk/lot"
     out["note"] = ("risk-first: %.2f%% of ₹%.0f = ₹%.0f budget ÷ ₹%.0f/lot "
-                   "(%.0f pt × %d) = **%d lot**, basket SL ₹%.0f"
-                   % (pct, cap, budget, per_lot, stop_pt, ls, lots, out["sl_rs"]))
+                   "(%s) = **%d lot**, risk cap ₹%.0f"
+                   % (pct, cap, budget, per_lot, _how, lots, out["sl_rs"]))
     if log:
         try:
             log("[basket_risk] %s — %s" % (strategy_id, out["note"]))

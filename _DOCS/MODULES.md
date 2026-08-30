@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**159 modules documented** across 10 folders.
+**158 modules documented** across 10 folders.
 
 
 ## Folders
@@ -592,9 +592,6 @@ _(no module docstring — add ek 1-line role add karo)_
 - 🔧 `load_state` — …
 - 🔧 `run` — …
 - 🔧 `save_state` — …
-
-### `strategies/live/_test_crasher.py`
-_(no module docstring — add ek 1-line role add karo)_
 
 ### `strategies/live/bnf_strangle_trader.py`
 _(no module docstring — add ek 1-line role add karo)_
