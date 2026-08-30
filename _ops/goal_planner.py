@@ -113,6 +113,81 @@ def _candidates(scope="all", include_ids=None):
     return out
 
 
+
+
+def _lot_size_for(ck, node):
+    """Strategy ka lot size — GUESS nahi. Pehle config, warna uske apne AAKHRI
+    recorded trade ke sec_id se (asli data). Na mile to None → sizing OFF."""
+    ls = node.get("lot_size")
+    try:
+        if ls and int(ls) > 0:
+            return int(ls)
+    except Exception:
+        pass
+    try:
+        import order_store, dhan_master as _dm, datetime as _dt
+        t = _dt.date.today()
+        f = (t - _dt.timedelta(days=120)).isoformat()
+        det = order_store.trades_for_range(f, t.isoformat())["details"]
+        for d in reversed(det):
+            if (d.get("strategy") or "") == ck and d.get("sec_id"):
+                n = _dm.get_lot_size_by_sec_id(d["sec_id"])
+                if n and int(n) > 0:
+                    return int(n)
+    except Exception:
+        pass
+    return None
+
+
+def _risk_cap_lots(cands):
+    """Per-strategy PER-TRADE risk cap ko `capacity_lots` me fold karo.
+
+    KYUN (user, 2026-08-30): *"4 lakh me 5 lot ban jaata, uska 1% mere liye sahi hai.
+    Scale karenge to wahi 1% ka constraint rahe — lot risk se adjust ho, AUTO, mujhe
+    yaad na dilana pade."*
+
+    Ab tak planner sirf DD-budget (portfolio-level) dekhta tha; **per-trade** risk —
+    yaani ₹ cap vs strategy ka apna validated stop — uske radar pe tha hi nahi. Isi
+    liye lots badhte gaye aur stop-distance chup-chaap sikudti gayi (50pt → 10pt).
+
+    Ab wo cap solver ke apne MAUJOODA ceiling (`capacity_lots`) me mil jaata hai —
+    solver ka loop chhua tak nahi (wo pehle se `lots[j] >= capacity_lots` pe rukta).
+
+    Cap tabhi lagta hai jab strategy ne `risk_pct` + `sl_pt` (validated stop) + capital
+    diye hon; warna kuch nahi badalta — opt-in, koi silent resize nahi.
+    """
+    try:
+        import basket_risk as _brisk
+        cfg = _read(NIFTY_CFG, {}) or {}
+    except Exception:
+        return
+    ps_all = ((cfg.get("_risk") or {}).get("per_strategy") or {})
+    for c in cands:
+        ck = c.get("config_key")
+        node = (cfg.get(ck) or {}) if ck else {}
+        if not node:
+            continue
+        merged = dict(node)
+        rk = ps_all.get(ck) or {}
+        if rk.get("capital_rs") and not merged.get("capital_rs"):
+            merged["capital_rs"] = rk["capital_rs"]
+        if rk.get("risk_pct") and not merged.get("risk_pct"):
+            merged["risk_pct"] = rk["risk_pct"]
+        ls = _lot_size_for(ck, merged)
+        if not ls:
+            continue
+        try:
+            sz = _brisk.sizing(c.get("id"), merged, lot_size=ls)
+        except Exception:
+            continue
+        if not sz.get("ok"):
+            continue
+        old = int(c.get("capacity_lots") or 0)
+        c["capacity_lots"] = min(old, sz["lots"]) if old else sz["lots"]
+        c["risk_cap_lots"] = sz["lots"]
+        c["risk_cap_note"] = sz["note"]
+
+
 def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
           risk_mult=1.0, seed=_rp._SEED, p_goal=60.0, weights=None, max_share=None):
     """
@@ -142,6 +217,12 @@ def solve(target_rs, to_date, dd_budget_rs, scope="all", include_ids=None,
     short-vol strategies ka bura din ek saath aata hai, aur solver ko wahi dikhna chahiye.
     """
     cands = _candidates(scope, include_ids)
+    # PER-TRADE risk cap → solver ke maujooda capacity ceiling me fold (opt-in;
+    # jinke paas risk_pct+sl_pt+capital nahi, unke liye kuch nahi badalta).
+    try:
+        _risk_cap_lots(cands)
+    except Exception as _e:
+        print("[goal_planner] risk-cap fold skip:", _e, flush=True)
     today = ist_now().date()
     n_days = _rp.trading_days_between(today, to_date)
     if not cands or n_days <= 0:

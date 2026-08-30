@@ -26,6 +26,7 @@
 basket_risk.py — basket SL/target ka SINGLE resolver: size ke saath scale, aur strategy ke apne validated exit se BAHAR rahe.
 
 - 🔧 `resolve` — Basket target/SL nikaalo + coherence verdict.
+- 🔧 `sizing` — risk% ko constant maan ke LOTS nikaalo (aur usi ka matching basket SL).
 
 ### `_core/broker_sync.py`
 broker_sync.py — Ghost position detector + reconciler (TRAP #44)

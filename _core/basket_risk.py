@@ -157,3 +157,83 @@ def _warn(strategy_id, out, log=print):
         notify.warn(msg, key=k, source="basket_risk")
     except Exception:
         pass       # alert fail hone se trading kabhi na ruke
+
+
+# ─────────────────────────── RISK-FIRST SIZING (user ka asli design) ─────────
+# User (2026-08-30): *"4 lakh me mera 5 lot 4-leg hedge ban jaata, to uska 1% mere
+# liye sahi hai. Jaise-jaise scale karenge wahi 1% ka constraint rahe — lot risk se
+# adjust ho, aur AUTO ho, mujhe yaad na dilana pade."*
+#
+# Yahi sahi shape hai, aur abhi ULTA laga hua tha:
+#     ABHI :  lots FIX  →  risk float karta hai   (capital badha? risk% chup-chaap badal gaya)
+#     SAHI :  risk% FIX →  lots DERIVED           (capital badha? lots khud badh gaye)
+#
+# Formula (koi jaadu nahi):
+#     risk_budget  = capital × risk%
+#     per_lot_risk = validated_stop_points × lot_size      <- backtest se aata hai
+#     lots         = floor(risk_budget / per_lot_risk)
+#     basket_sl    = lots × per_lot_risk                   <- budget se kabhi upar nahi
+#
+# Isse teen cheezein apne aap sach ho jaati hain:
+#   1. stop-distance HAMESHA wahi rehti hai jo backtest me thi (per-lot fix hai)
+#   2. risk% hamesha wahi rehta hai jo user ne chuna (budget fix hai)
+#   3. capital/scale badle to **lots khud** adjust hote hain — yaad dilane ki
+#      zaroorat nahi (yahi Goal Planner/roadmap ka poora point tha)
+#
+# Jo cheez ab "de dena" padti hai wo sirf EK hai: **validated stop (points)**.
+# Wo backtest se aata hai, guess se nahi. Na mile to sizing REFUSE karti hai aur
+# purane static `qty` pe chali jaati hai — chup-chaap koi number nahi banati.
+def sizing(strategy_id, cfg, lot_size, own_exit_pt=None,
+           capital_rs=None, risk_pct=None, log=None):
+    """risk% ko constant maan ke LOTS nikaalo (aur usi ka matching basket SL).
+
+    Returns dict:
+      ok               — sizing ho paayi ya nahi (False = caller static qty use kare)
+      lots             — derived lots
+      risk_budget_rs   — capital × risk%
+      per_lot_risk_rs  — stop_pt × lot_size
+      sl_rs / target_rs— basket cap jo IN lots se exactly match karta hai
+      stop_pt          — kaunsa validated stop use hua
+      note             — ek line, insaan ke liye
+    """
+    cfg = cfg or {}
+    cap = _f(capital_rs if capital_rs is not None else cfg.get("capital_rs"), 0.0)
+    pct = _f(risk_pct if risk_pct is not None else cfg.get("risk_pct"), 0.0)
+    stop_pt = _f(own_exit_pt if own_exit_pt is not None else cfg.get("sl_pt"), 0.0)
+    ls = _f(lot_size, 0.0)
+
+    out = {"ok": False, "lots": 0, "risk_budget_rs": 0.0, "per_lot_risk_rs": 0.0,
+           "sl_rs": 0.0, "target_rs": 0.0, "stop_pt": stop_pt, "note": ""}
+
+    missing = [n for n, v in (("capital_rs", cap), ("risk_pct", pct),
+                              ("validated stop (sl_pt)", stop_pt), ("lot_size", ls)) if v <= 0]
+    if missing:
+        out["note"] = ("risk-first sizing OFF — " + ", ".join(missing) + " nahi hai; "
+                       "purana static qty chalega (koi number guess nahi kiya)")
+        return out
+
+    budget = cap * pct / 100.0
+    per_lot = stop_pt * ls
+    lots = int(budget // per_lot)
+
+    out.update(risk_budget_rs=budget, per_lot_risk_rs=per_lot, lots=lots)
+    if lots < 1:
+        out["note"] = ("is risk-budget me 1 lot bhi nahi aata — 1 lot ka risk ₹%.0f "
+                       "(%.0f pt × %d) hai par budget sirf ₹%.0f (%.2f%% of ₹%.0f). "
+                       "Ya risk%% badhao, ya capital, ya stop chhota karo."
+                       % (per_lot, stop_pt, ls, budget, pct, cap))
+        return out
+
+    tgt_mult = _f(cfg.get("target_r_multiple"), 0.0)
+    out["ok"] = True
+    out["sl_rs"] = lots * per_lot
+    out["target_rs"] = (out["sl_rs"] * tgt_mult) if tgt_mult > 0 else                        _f(cfg.get("basket_target_rs"), out["sl_rs"])
+    out["note"] = ("risk-first: %.2f%% of ₹%.0f = ₹%.0f budget ÷ ₹%.0f/lot "
+                   "(%.0f pt × %d) = **%d lot**, basket SL ₹%.0f"
+                   % (pct, cap, budget, per_lot, stop_pt, ls, lots, out["sl_rs"]))
+    if log:
+        try:
+            log("[basket_risk] %s — %s" % (strategy_id, out["note"]))
+        except Exception:
+            pass
+    return out
