@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**157 modules documented** across 10 folders.
+**158 modules documented** across 10 folders.
 
 
 ## Folders
@@ -1114,6 +1114,16 @@ goal_planner.py — "mujhe ₹X chahiye Y date tak" → lots ka basket, aur usko
 - 🔧 `rollback` — Pichle apply ka config backup wapas — plan store bhi peeche.
 - 🔧 `scenarios` — Safe / Balanced / Aggressive — teeno me DONO cheezein badalti hain: kitna risk lena
 - 🔧 `solve` — Greedy integer-lot allocation:
+
+### `_ops/heartbeat.py`
+heartbeat.py — DEAD-MAN SWITCH: "koi khabar na aana" bhi ek khabar hai.
+
+- 🔧 `check_dashboard` — (alive, detail). None = pata nahi chala (jhootha alarm nahi bajana).
+- 🔧 `check_units` — [(unit, active, detail)] — systemd se. Linux ke bahar khaali list.
+- 🔧 `main` — …
+- 🔧 `new_supervisor_events` — Pichli baar ke baad ke naye supervisor events (respawn / give-up).
+- 🔧 `run` — …
+- 🔧 `safe_mode_status` — …
 
 ### `_ops/idea_vault.py`
 idea_vault.py — Quick idea/strategy/bug video capture store (display-only).

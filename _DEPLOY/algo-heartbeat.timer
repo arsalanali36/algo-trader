@@ -1,0 +1,10 @@
+[Unit]
+Description=CODE3B heartbeat — har 15 min (aur boot ke baad)
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
