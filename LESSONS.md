@@ -4944,3 +4944,99 @@ Unit is now `SuccessExitStatus=0 3`.
 **Companion (same deploy).** `_ops/` scripts that run directly need the root on
 `sys.path` *before* `import _paths` — the pattern is already in CLAUDE.md and in
 `_ops/eod_report.py`; I skipped it and the timer was dead on arrival.
+
+---
+
+## TRAP #194 — "error pe khaali return" har caller ka fail-safe chup-chaap ulta kar deta hai (3rd occurrence)
+
+**Symptom (live, 2026-08-30):** Zerodha pe 8 asli positions khuli (4 weekly iron-fly +
+4 manual), par Orders page **"koi open position nahi"** — aur saath me badge **"Zerodha
+mismatch (8)"**. Page ek saath dono taraf jhooth bol raha tha.
+
+**Root:** `KiteBroker.positions()` / `positions_detailed()` har exception **nigal ke
+`{}` / `[]`** dete hain. Yaani **"token se padha hi nahi ja saka"** aur **"sach me flat
+hai"** bilkul ek jaise. Kite token dead tha → book "khaali" padhi gayi → har asli LIVE
+leg display se drop, aur guard ko app=8 vs broker=0 dikha.
+
+**Sabse zaroori hissa:** dono consumers ka fail-safe **SAHI likha tha** —
+`"ok=False -> caller har verdict ko unknown maane"` (`_broker_open_snapshot`) aur
+`"None if broker can't be reached, never a false clear"` (`_broker_net_kite`) — par dono
+ka `except` **kabhi chalta hi nahi tha**, kyunki neeche wali layer raise hi nahi karti.
+**Design theek, ek layer neeche defeat.**
+
+**Guard:** empty book pe bharosa **tabhi** jab `KiteBroker.auth_ok()` alag se True de
+(True=zinda / False=token dead / **None**=network, dead mat samjho). Dono jagah lagaya.
+
+**Teen occurrence, ek shape:** `funds()`→`{}` (safe-mode monitoring INERT, TRAP #193 ke
+saath mila) · `positions_detailed()`→`[]` (legs gayab) · `positions()`→`{}` (jhoothi
+mismatch). **Code padh ke "fail-safe hai" maan lena kaafi nahi — verify karo ki jis
+layer pe bharosa hai wo sach me RAISE karti hai.**
+
+**Baaki (nahi kiya):** in methods ka contract badalna (error→`None`, empty→`{}`) — uske
+callers order-path me hain (broker_sync ghost-detection), apna careful pass maangta hai.
+
+---
+
+## TRAP #195 — fixed ₹ SL + badhte lots = stop-distance chup-chaap sikudti hai
+
+**User ne pakda:** *"backtest me 1% risk tha, ab lot badha diya to risk badh gaya na —
+ye to aisa hua ki 30pt ke liye tayyar hue, fir zyada lot me 2-4pt ka scalping karne lag
+gaye."* Bilkul sahi, aur naap ke confirm hua.
+
+**Mechanism:** risk = f(size, stop-distance). Do knob **alag-alag** set ho rahe the —
+size (lots, planner/config badalta) aur cap (**₹4,000 ABSOLUTE**, kabhi dobara nahi
+chhua). ₹ fix + lots up ⇒ **stop-distance apne aap sikudti hai**. Kisi ne SL nahi badla,
+phir bhi SL tight ho gaya.
+
+**Measured:** `bnf_strangle_hedged` ka backtest `sl:4000 @ 5 lots` = **₹800/lot**; live
+11 lots pe wahi ₹4,000 = **₹364/lot** (2.2× tight). Live proof: uske hedged twin
+`straddle_alert_hedged` ke **23% legs GROUP_SL** se marte the, jabki uska PAPER twin
+apne STRADDLE_SL/TARGET pe exit karta tha — **ek naam, do alag strategy**.
+
+**Fix:** `_core/basket_risk.py` — (1) **per-lot cap** (`basket_sl_per_lot_rs`) → lots
+badhne pe stop-distance WAHI; (2) **coherence guard** — cap strategy ke apne exit se
+tight ho to `verdict=conflict` + loud alert + kitne lots budget me fit hote hain.
+
+**Aur uska ulta bhi (risk-first sizing):** `risk% FIX → lots DERIVED`
+(`lots = floor(capital×risk% / per_lot_risk)`), goal_planner ke maujooda
+`capacity_lots` ceiling me fold — ADR-022.
+
+**⚠️ Diagnose karte waqt meri galti:** maine `sl_pt: 50` (live config) ko "validated
+exit" maan liya aur 4.8× divergence report kiya. Wo galat tha — hedged strategies
+`exit_mode="basket_rs"` pe hain, wahan `sl_pt` naked PARENT ka leftover hai aur **kabhi
+fire hota hi nahi**. **Asli backtest number `runs/<slug>/meta.json` me hota hai, live
+config ke field me nahi.** Guard me bhi ye fix kiya (basket_rs pe sl_pt ignore) warna
+wo jhootha conflict bajata rehta.
+
+**Rule-10 ka mahin farq (yaad rakho):** **LOTS pe chhat lagana backtest ko todta NAHI**
+(per-lot behaviour bilkul same, stop-distance same) — wo sizing hai, strategy ki
+validated logic ke bahar. **SL/target daalna behaviour BADAL deta hai.** Isi liye
+02.10.01 pe cap laga, par 02.17 / 04.03.02 pe (jinke backtest me koi ₹-cap tha hi nahi)
+jaan-boojh kar kuch nahi daala.
+
+---
+
+## TRAP #196 — registry ka `status` aur live config ka `mode` kabhi cross-check hi nahi hote the
+
+**Symptom:** `range_hedged` (Ars chain hedged vertical, 04.03.01) registry me
+`status=paper` tha, config me **`active:true, mode:live`**, aur usne 19-Aug ko **asli
+LIVE trade** kiya — jabki uska backtest Sharpe **~−1.0** hai (naked SELL −0.63 se bhi
+bura). Kisi ko pata nahi chala; user ne haath se pakda.
+
+**Root:** registry ko hum status ka source of truth maante hain, par **registry aur live
+config kabhi milaye hi nahi jaate the** — do jagah "sach" likha tha aur koi cross-check
+nahi (is repo ka sabse purana bug-shape).
+
+**Guard:** `_ops/heartbeat.registry_vs_config()` — registry non-live (paper/research/
+retired) + config live+active → **error**; registry live + config band → **warn**.
+`active` na ho to `enabled` padhta hai; config me strategy na ho to chup.
+
+**Guard ne pehle hi run me DO AUR pakde:** 02.10.01 + 04.03.02 registry me `paper` the
+par jaan-boojh ke live — yahan galti config me nahi, **REGISTRY stale thi**. Aur *yahi*
+wajah thi ki range_hedged ka "paper" kisi ko chubha nahi: jab aadhi registry galat status
+dikha rahi ho, koi ek "paper" information deta hi nahi.
+
+**Guard ka apna blind spot (isi pass me mila):** 02.17 use dikhta hi nahi tha — uska
+order_store id `weekly_ironfly_v1` hai par nifty_config block `_weekly_ironfly`. Ab
+registry me explicit **`settings_key`**. **Sabak: registry-id ≠ config-block-name wali
+strategies har us tool se chup-chaap bahar reh jaati hain jo config_key se lookup karta hai.**
