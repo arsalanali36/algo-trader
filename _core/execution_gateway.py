@@ -111,6 +111,24 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
         except Exception:
             pass   # fail-open
 
+        # ACCOUNT-WIDE daily loss brake (2026-08-30). Har doosra cap PER-STRATEGY
+        # hai; ye poore live account ke aaj ke P&L pe chhat lagata hai. DEFAULT OFF.
+        # Sirf NAYI entry rokta hai — exit/paper ko chhuta bhi nahi. FAIL-OPEN.
+        try:
+            import risk_gate as _rgacc
+            _abrk, _areason = _rgacc.account_daily_loss_breached()
+            if _abrk:
+                log(f"[GATEWAY] [SKIP] {symbol} LIVE entry — {_areason}")
+                try:
+                    import notify as _nf
+                    _nf.error("🛑 " + _areason, key="account_loss_cap",
+                              source="risk_gate")
+                except Exception:
+                    pass
+                return _result(False, "blocked", "account_daily_loss", price=est_price)
+        except Exception:
+            pass   # fail-open
+
     # DEFAULT leg-collision guard (broker fungibility) — the MAIN GATE. A LIVE
     # strategy entry must NEVER land on a contract ANOTHER strategy already holds
     # open at the broker: option positions are fungible by CONTRACT, not strategy,

@@ -1928,6 +1928,72 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
     return tags
 
 
+# ─────────────────────────── ACCOUNT-WIDE daily loss brake (2026-08-30) ──────
+# WHY: har cap yahan tak PER-STRATEGY tha (`daily_loss_breached`), aur kill-floor
+# ek *profit* lock hai. Yaani account ke level pe LOSS ki koi chhat thi hi nahi —
+# 12 live-capable strategies me se har ek apni cap tak alag-alag ja sakti thi aur
+# jod pe kuch nahi rokta tha. Ye us akele gap ko bharta hai.
+#
+# SCOPE (jaan-boojh kar tang):
+#   * sirf LIVE — paper lane (data collection) ko chhuta bhi nahi (user ki rule).
+#   * sirf NAYI ENTRY rokta hai; open positions ko square off NAHI karta. Wo
+#     aadha kaam per-strategy cap already karta hai (wo squareoff karta hai).
+#     "Aur mat khodo" is brake ka kaam hai — imaandaari se ye aadha brake hai,
+#     poora nahi, aur ye jaan-boojh kar hai (squareoff-wala aadha zyada risky
+#     code hai, use alag se apna rollout chahiye).
+#   * DEFAULT OFF — kill-floor / safe-mode wala hi pattern.
+#
+# VALUE kaise chuna: 48 din ke asli per-din account MTM archives
+# (`peak_pnl_history_*.json` ka `__all`) me worst din = -34,522. Suggested
+# 75,000 = uska ~2.2x → itihaas me kabhi fire nahi hota (Rule 10 neutral),
+# par ek runaway ko us din ke andar hi rok deta hai.
+def account_daily_loss_config(rc=None):
+    """{enabled, cap_rs}. Default OFF."""
+    g = (rc or _risk_cfg()).get("global", {}) or {}
+    try:
+        cap = float(g.get("account_max_loss_rs") or 0)
+    except (TypeError, ValueError):
+        cap = 0.0
+    return {"enabled": bool(g.get("account_max_loss_enabled", False)),
+            "cap_rs": cap if cap > 0 else 0.0}
+
+
+def account_day_pnl(unrealized=0.0, mode="live"):
+    """Aaj ka poore ACCOUNT ka realized P&L (saari strategies mila ke) +
+    caller ka unrealized estimate. `mode` filter (default 'live') — paper ka
+    simulated P&L asli paisa nahi hai, use is brake me nahi ginte."""
+    from datetime import datetime, timedelta, timezone
+    ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    realized = 0.0
+    try:
+        import order_store
+        data = order_store.trades_for(ist.strftime("%Y-%m-%d"))
+        for d in data.get("details", []):
+            if mode and (d.get("mode") or "") != mode:
+                continue
+            realized += float(d.get("pnl") or 0)
+    except Exception:
+        pass
+    return realized + float(unrealized or 0)
+
+
+def account_daily_loss_breached(unrealized=0.0, rc=None):
+    """(breached, reason). FAIL-OPEN — is check me hi dikkat ho to trading na ruke
+    (wahi convention jo trading-day guard aur safe-mode follow karte hain)."""
+    try:
+        cfg = account_daily_loss_config(rc=rc)
+        if not cfg["enabled"] or cfg["cap_rs"] <= 0:
+            return False, ""
+        pnl = account_day_pnl(unrealized)
+        if pnl <= -abs(cfg["cap_rs"]):
+            return True, (f"ACCOUNT daily loss cap ₹{_inr(cfg['cap_rs'])} hit "
+                          f"(aaj ka live P&L ₹{_inr(pnl)}) — nayi LIVE entry band")
+        return False, ""
+    except Exception as e:
+        print(f"[risk_gate] account_daily_loss_breached fail-open: {e}", flush=True)
+        return False, ""
+
+
 def daily_loss_breached(strategy, unrealized=0.0, rc=None, mode=None, broker=None):
     """SUPREME check: True if `strategy` has lost >= its unified daily cap today
     (realized + caller's unrealized estimate). Used by BOTH the entry gate (block

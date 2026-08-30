@@ -134,6 +134,9 @@ payoff.py — multi-leg option position payoff / zone analytics.
 ### `_core/risk_gate.py`
 risk_gate.py — capital allocation gate (RMS Stage 1).
 
+- 🔧 `account_daily_loss_breached` — (breached, reason). FAIL-OPEN — is check me hi dikkat ho to trading na ruke
+- 🔧 `account_daily_loss_config` — {enabled, cap_rs}. Default OFF.
+- 🔧 `account_day_pnl` — Aaj ka poore ACCOUNT ka realized P&L (saari strategies mila ke) +
 - 🔧 `advance_target_sl` — One monitor-tick of the Default Target/SL profile. Pure — caller owns
 - 🔧 `advance_trailing_lock` — One tick of the shared arm+gap+confirm+2-reading-peak trailing-lock
 - 🔧 `affordable_lots` — SMART SIZE-DOWN — the largest lot-count in 1..max_lots whose REAL margin
