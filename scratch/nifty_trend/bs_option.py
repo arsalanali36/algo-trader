@@ -52,6 +52,17 @@ def bs_delta(S, K, T, sigma, r=R_FREE, opt="CE"):
     return _norm_cdf(d1) if opt == "CE" else _norm_cdf(d1) - 1.0
 
 
+def bs_gamma(S, K, T, sigma, r=R_FREE):
+    """Option gamma (d2Price/dSpot2) — SAME for CE and PE (put-call parity). At/after expiry
+    or zero vol -> 0.0 (a knife-edge delta has no finite gamma). Used by the dealer-gamma /
+    GEX research: per-strike gamma x OI x spot^2 x 0.01 = rupee-delta change per 1% move."""
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return 0.0
+    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    npdf = math.exp(-0.5 * d1 * d1) / math.sqrt(2.0 * math.pi)
+    return npdf / (S * sigma * math.sqrt(T))
+
+
 def implied_vol(market_price, S, K, T, r=R_FREE, opt="CE", lo=0.005, hi=3.0, tol=1e-4):
     """Invert bs_price to the annualised sigma implied by a market premium (bisection,
     no scipy). Returns sigma as a FRACTION (0.16 = 16%), or None when the price is
