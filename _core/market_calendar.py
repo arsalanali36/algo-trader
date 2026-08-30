@@ -122,7 +122,11 @@ def is_trading_day(d=None):
     dd = _to_date(d) if d is not None else ist_now().date()
     if dd.weekday() >= 5:            # Sat/Sun
         return False
-    if dd.year not in COVERED_YEARS and dd.year not in _WARNED_YEARS:
+    # Sirf AAJ ke saal se aage ke liye bolo. Backtest purane saalon pe iterate karta
+    # hai (2018-2024) — un pe warn karna sirf log-spam hai aur asli warning ko dabaa
+    # deta hai. Beeta hua saal ab badal nahi sakta; matlab sirf aane wale saal ka hai.
+    if (dd.year >= ist_now().year
+            and dd.year not in COVERED_YEARS and dd.year not in _WARNED_YEARS):
         _WARNED_YEARS.add(dd.year)
         print(f"[market_calendar] ⚠️  {dd.year} ki NSE holiday list missing — us saal ki "
               f"chhuttiyan trading-day mani jayengi. List update karo.", flush=True)
