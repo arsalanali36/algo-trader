@@ -70,12 +70,32 @@ DESIRED_FILE = DATA_DIR / "supervisor_desired.json"
 DAEMON_PIDFILE = DATA_DIR / "supervisor_daemon.pid"
 CONFIG_FILE = BASE_DIR / "nifty_config.json"   # repo root me hai (data/ me nahi)
 
-# PARITY: legacy Popen crash pe respawn nahi karta tha — hum bhi nahi.
-# (Deliberate future enable ke liye flag; tab RESPAWN_BACKOFF/MAX_QUICK_CRASHES
-#  wapas kaam aayenge.)
-RESPAWN_ON_CRASH = False
+# BOUNDED RESPAWN (2026-08-30, autonomy audit blocker #5)
+# --------------------------------------------------------
+# Pehle ye OFF tha — legacy Popen se PARITY ke liye. Uska asli khatra ye tha ki
+# restart pe strategy apni in-memory position bhool jaati thi (TRAP #28/#76), to
+# auto-respawn = phantom/duplicate entry. Wo jad ab band hai: har live trader
+# `_recover_state_from_order_store()` se apni open positions wapas uthata hai.
+#
+# Bina respawn ke ek fork mid-day mare to wo AGLE DIN 9:10 tak dead rehta tha,
+# chup-chaap — 1-mahina-akela wale target ke liye ye sabse bada chhed tha.
+#
+# Ab: BOUNDED. Din me MAX_RESPAWNS_PER_DAY tak, badhta hua backoff, aur sirf
+# tab jab desired == "running" (yaani humne jaan-boojh ke band nahi kiya —
+# 15:30 EOD-stop desired ko "stopped" kar deta hai, to shaam ko respawn nahi
+# hoga). Budget khatam = give up + alert; chup-chaap infinite loop kabhi nahi.
+RESPAWN_ON_CRASH = True
+MAX_RESPAWNS_PER_DAY = 3
+RESPAWN_BACKOFF = (60, 300, 900)   # 1min -> 5min -> 15min
 KILL_GRACE_SECS = 10          # desired=stopped -> SIGTERM, itne baad SIGKILL
 POLL_SECS = 2                 # desired-file mtime poll
+
+# Supervisor ek FORK-PARENT hai — isme koi thread nahi aana chahiye (fork+threads
+# = deadlock, isi file ka apna documented trap). `notify` ka telegram bridge
+# thread spawn karta hai, isliye yahan se alert NAHI bhejte: events file me
+# likhte hain aur `_ops/heartbeat.py` (alag one-shot process) unhe phone tak
+# pahunchata hai.
+EVENTS_FILE = DATA_DIR / "supervisor_events.json"
 
 
 def ist_now():
@@ -248,6 +268,29 @@ def _spawn(sid, mode, script_path):
     return pid
 
 
+def _record_event(kind, sid, detail=""):
+    """Chhota append-only event log (bounded). Koi thread nahi, koi network nahi —
+    fork-parent safe. `_ops/heartbeat.py` ise padh ke phone pe alert bhejta hai."""
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(EVENTS_FILE, encoding="utf-8") as f:
+                evs = json.load(f)
+            if not isinstance(evs, list):
+                evs = []
+        except Exception:
+            evs = []
+        evs.append({"ts": int(time.time()), "kind": kind,
+                    "sid": sid, "detail": str(detail)[:200]})
+        evs = evs[-200:]
+        tmp = str(EVENTS_FILE) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(evs, f)
+        os.replace(tmp, EVENTS_FILE)
+    except Exception as e:
+        _log(f"event write fail: {e}")
+
+
 def _script_ok(script_path):
     """Sanity: script maujood ho aur strategies/live ke andar ho (desired-file
     tamper hone pe bhi daemon manmaani file execute nahi karega)."""
@@ -272,6 +315,10 @@ def daemon_loop():
     kill_pending = {}   # sid -> SIGKILL deadline (graceful stop escalation)
     stopping = {"flag": False}
     last_mtime = 0.0
+    desired = _read_desired()      # reap ko bhi chahiye (respawn eligibility)
+    respawn_at = {}     # sid -> jab dobara try karna hai (unix ts)
+    respawn_n = {}      # sid -> aaj kitni baar respawn kiya
+    respawn_day = ist_now().date().isoformat()
 
     def _shutdown(signum, frame):
         stopping["flag"] = True
@@ -298,12 +345,39 @@ def daemon_loop():
             dead = next((s for s, c in children.items() if c["pid"] == pid), None)
             if dead:
                 up = time.time() - children[dead]["started"]
-                _log(f"{dead} exit (pid {pid}, uptime {up:.0f}s)"
-                     + ("" if dead in kill_pending else " — respawn OFF (parity), "
-                        "agla /api/start hi dobara chalayega"))
+                deliberate = dead in kill_pending
                 children[dead]["pid"] = None
                 kill_pending.pop(dead, None)
                 _write_pidmap(children)
+
+                # naya din -> budget reset
+                _today = ist_now().date().isoformat()
+                if _today != respawn_day:
+                    respawn_day = _today
+                    respawn_n.clear()
+                    respawn_at.clear()
+
+                want = (desired or {}).get(dead) or {}
+                should_run = isinstance(want, dict) and want.get("desired") == "running"
+
+                if deliberate or not RESPAWN_ON_CRASH or not should_run:
+                    _log(f"{dead} exit (pid {pid}, uptime {up:.0f}s)"
+                         + ("" if deliberate else
+                            " — desired!=running, respawn nahi (EOD stop ya manual)"))
+                elif respawn_n.get(dead, 0) >= MAX_RESPAWNS_PER_DAY:
+                    _log(f"🔴 {dead} exit (uptime {up:.0f}s) — aaj ka respawn budget "
+                         f"({MAX_RESPAWNS_PER_DAY}) khatam, GIVING UP")
+                    _record_event("respawn_gaveup", dead,
+                                  f"{MAX_RESPAWNS_PER_DAY} respawns aaj, phir bhi mar raha")
+                else:
+                    n = respawn_n.get(dead, 0)
+                    delay = RESPAWN_BACKOFF[min(n, len(RESPAWN_BACKOFF) - 1)]
+                    respawn_at[dead] = time.time() + delay
+                    respawn_n[dead] = n + 1
+                    _log(f"⚠️  {dead} exit (uptime {up:.0f}s) — respawn "
+                         f"#{n + 1}/{MAX_RESPAWNS_PER_DAY} {delay}s baad")
+                    _record_event("respawn_scheduled", dead,
+                                  f"uptime {up:.0f}s, attempt {n + 1}, {delay}s baad")
 
         # 2) graceful-stop escalation
         now = time.time()
@@ -319,6 +393,38 @@ def daemon_loop():
                 except ProcessLookupError:
                     pass
                 kill_pending.pop(sid, None)
+
+        # 2.5) due respawns (bounded — upar reap me schedule hote hain)
+        if respawn_at:
+            _now = time.time()
+            for sid in [k for k, t in respawn_at.items() if _now >= t]:
+                respawn_at.pop(sid, None)
+                want = (desired or {}).get(sid) or {}
+                if want.get("desired") != "running":
+                    _log(f"{sid}: respawn ka waqt aaya par desired ab 'running' nahi — skip")
+                    continue
+                c = children.get(sid)
+                if c and c["pid"]:
+                    continue                      # beech me kisi aur ne start kar diya
+                script = want.get("script", "")
+                mode = want.get("mode", "paper")
+                if not _script_ok(script):
+                    _log(f"⚠️  {sid}: respawn refuse — script sanity FAIL ({script!r})")
+                    _record_event("respawn_failed", sid, "script sanity fail")
+                    continue
+                own = {x["pid"] for x in children.values() if x["pid"]}
+                if _legacy_pid(sid, own):
+                    _log(f"{sid}: legacy process already chal raha — respawn skip")
+                    continue
+                _rewarm_if_new_day(state)
+                pid = _spawn(sid, mode, script)
+                children[sid] = {"pid": pid, "mode": mode, "script": script,
+                                 "started": time.time()}
+                _log(f"♻️  respawned {sid} (pid {pid}, {mode}) "
+                     f"[{respawn_n.get(sid, 0)}/{MAX_RESPAWNS_PER_DAY} aaj]")
+                _record_event("respawned", sid,
+                              f"attempt {respawn_n.get(sid, 0)}, mode {mode}")
+                _write_pidmap(children)
 
         # 3) desired-file change? -> reconcile
         try:
