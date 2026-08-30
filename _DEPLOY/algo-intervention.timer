@@ -5,7 +5,7 @@ Description=Run CODE3B intervention report weekday post-close (16:20 IST)
 # 15:25 close -> 16:10 equity-daily lake fill (RSI-midline candles) -> 16:20 here.
 # (engine also has a live-fetch fallback, so it works even before the lake fills.)
 OnCalendar=Mon..Fri 16:20:00
-Persistent=false
+Persistent=true
 
 [Install]
 WantedBy=timers.target
