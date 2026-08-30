@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**158 modules documented** across 10 folders.
+**159 modules documented** across 10 folders.
 
 
 ## Folders
@@ -21,6 +21,11 @@
 
 <a id="core"></a>
 ## `_core` — RMS + order/execution money-path (sabse critical)
+
+### `_core/basket_risk.py`
+basket_risk.py — basket SL/target ka SINGLE resolver: size ke saath scale, aur strategy ke apne validated exit se BAHAR rahe.
+
+- 🔧 `resolve` — Basket target/SL nikaalo + coherence verdict.
 
 ### `_core/broker_sync.py`
 broker_sync.py — Ghost position detector + reconciler (TRAP #44)

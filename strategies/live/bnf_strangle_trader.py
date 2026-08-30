@@ -644,11 +644,16 @@ def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
 
     net_credit = round(sum(x["entry_prem"] for x in legs if x["side"] == "SELL")
                        - sum(x["entry_prem"] for x in legs if x["side"] == "BUY"), 2)
+    # basket cap ab EK resolver se (per-lot scale + apne exit se conflict pe loud)
+    import basket_risk as _brisk
+    _br = _brisk.resolve("bnf_strangle_hedged", tc, lots=lots, lot_size=lot_size,
+                         log=log.info)
     log.info(f"  ★ ENTRY HEDGED STRANGLE ({len(legs)} legs) net_credit≈{net_credit}  "
-             f"wings={wing_strikes} strikes OTM  basket ±₹{tc.get('basket_sl_rs', 4000):.0f}")
+             f"wings={wing_strikes} strikes OTM  basket ±₹{_br['sl_rs']:.0f}"
+             + (f"  [{_br['note']}]" if _br.get("note") else ""))
     return dict(legs=legs, entry_credit=net_credit, group_id=gid, hedged=True, exit_mode="basket_rs",
-                basket_target_rs=float(tc.get("basket_target_rs", 4000)),
-                basket_sl_rs=float(tc.get("basket_sl_rs", 4000)),
+                basket_target_rs=float(_br["target_rs"]),
+                basket_sl_rs=float(_br["sl_rs"]),
                 entry_date=str(ist_now().date()),
                 entry_spot=round(spot, 1))
 

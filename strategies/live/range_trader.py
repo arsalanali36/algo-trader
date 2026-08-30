@@ -1067,8 +1067,10 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
     # ── arm ±basket_rs rule on the group → central monitor ordered exit ──
     try:
         import position_exit_rules as per
-        tgt = float(cfg.get("basket_target_rs", 4000))
-        sl  = -abs(float(cfg.get("basket_sl_rs", 4000)))
+        import basket_risk as _brisk
+        _br = _brisk.resolve("range_hedged", cfg, lots=lots, lot_size=lot_sz)
+        tgt = float(_br["target_rs"])
+        sl  = -abs(float(_br["sl_rs"]))
         key = per.rule_key(gid, [])
         per.set_rule(key, gid, [], target_rs=tgt, sl_rs=sl, mode=mode)
         log.info(f"[RANGEH] armed basket rule {key}: +₹{tgt:.0f}/-₹{abs(sl):.0f}")
@@ -1083,7 +1085,7 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
     st["hedge_trad_sym"] = w_tsym
     st["hedge_group"]    = gid
     log.info(f"  ★ ENTRY HEDGED VERTICAL {symbol} {opt_type} SELL@{s_strike} + "
-             f"BUY wing@{w_strike} (Δ~{target_delta}) basket ±₹{float(cfg.get('basket_sl_rs',4000)):.0f}")
+             f"BUY wing@{w_strike} (Δ~{target_delta}) basket ±₹{abs(sl):.0f}")
     return True
 
 

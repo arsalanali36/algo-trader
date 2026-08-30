@@ -6965,15 +6965,30 @@ def _fire_hedged_alert_straddle(symbol, source, log=print):
     # ── arm ±basket_rs rule on the group → central monitor does ORDERED exit ──
     try:
         import position_exit_rules as per
-        tgt = float(hc.get("basket_target_rs", 4000))
-        sl = -abs(float(hc.get("basket_sl_rs", 4000)))
+        import basket_risk as _brisk
+        # basket cap ab EK resolver se — per-lot ho to size ke saath scale karta hai,
+        # aur strategy ke apne exit se tight ho to loud bolta hai (conflict).
+        # apna validated exit PARENT (paper twin) ke config me hai — wahi se do,
+        # warna coherence-check "unknown" pe reh jaata aur drift chhup jaata.
+        _own_pt = None
+        try:
+            _raw = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+            _acfg = (_raw.get("_auto_straddle") or {})
+            _psym = (_acfg.get("per_symbol") or {}).get(symbol) or {}
+            _own_pt = _psym.get("sl_pt", _acfg.get("sl_pt"))
+        except Exception:
+            pass
+        _br = _brisk.resolve("straddle_alert_hedged", hc, lots=lots,
+                             lot_size=lot_size, own_exit_pt=_own_pt, log=log)
+        tgt = float(_br["target_rs"])
+        sl = -abs(float(_br["sl_rs"]))
         key = per.rule_key(gid, [])
         per.set_rule(key, gid, [], target_rs=tgt, sl_rs=sl, mode=mode)
         log(f"[straddle-hedged] armed basket rule {key}: +₹{tgt:.0f}/-₹{abs(sl):.0f}")
     except Exception as re:
         log(f"[straddle-hedged] arm basket rule FAIL: {re} — EOD squareoff still protects")
     return True, (f"{symbol} HEDGED straddle LIVE ({lots}L, wings {wing_strikes} strikes OTM, "
-                  f"basket ±₹{hc.get('basket_sl_rs', 4000):.0f})")
+                  f"basket ±₹{abs(sl):.0f})")
 
 
 def on_option_alert(alert):
