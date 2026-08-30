@@ -284,6 +284,18 @@ def check(do_notify=True, force=False):
     out["dhan_hours_left"] = round(left2, 2) if left2 is not None else None
     print(f"[token_refresh] dhan: {'OK ' if ok else 'FAIL'} — {msg}", flush=True)
 
+    # Safe mode: Dhan token SACH ME mar chuka ho to system data-andha hai — nayi
+    # LIVE entry nahi honi chahiye. Sirf expire pe (renew fail ≠ expire; buffer
+    # ke andar fail hona normal retry hai).
+    try:
+        import safe_mode as _sm
+        if left2 is not None and left2 <= 0:
+            _sm.trip("data_auth", f"Dhan token expire ({left2:.1f}h)")
+        elif ok and left2 is not None and left2 > 0:
+            _sm.clear("data_auth")
+    except Exception:
+        pass
+
     if do_notify:
         if ok:
             _resolve("token:dhan")
@@ -300,6 +312,19 @@ def check(do_notify=True, force=False):
     out["kite_alive"] = alive
     out["kite_msg"] = kmsg
     print(f"[token_refresh] kite: {alive} — {kmsg}", flush=True)
+
+    # Safe mode: Kite dead = LIVE order aur EXIT dono fail honge. Nayi live entry
+    # band karo (exit attempts jaari rehte hain — wo alag path hai).
+    # alive None (network glitch) pe kuch mat karo — jhoothe trip se live trading
+    # bina wajah rukegi.
+    try:
+        import safe_mode as _sm
+        if alive is False:
+            _sm.trip("broker_auth", kmsg)
+        elif alive is True:
+            _sm.clear("broker_auth")     # subah login karte hi khud bahaal
+    except Exception:
+        pass
 
     if do_notify:
         if alive is True:
@@ -323,8 +348,13 @@ def main(argv):
     if status_only:
         left = dhan_hours_left()
         alive, kmsg = kite_status()
+        try:
+            import safe_mode as _sm
+            sm = _sm.status()
+        except Exception:
+            sm = None
         res = {"dhan_hours_left": round(left, 2) if left is not None else None,
-               "kite_alive": alive, "kite_msg": kmsg}
+               "kite_alive": alive, "kite_msg": kmsg, "safe_mode": sm}
         print(json.dumps(res) if as_json else res)
         return 0
 

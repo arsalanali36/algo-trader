@@ -3184,6 +3184,15 @@ def api_kite_exchange_token():
         n = _clear_alerts("token:kite")
         if n:
             print(f"[alerts] Kite login OK — {n} alert(s) cleared", flush=True)
+        # Safe mode (blocker #3) bhi yahin hatao. Warna: user subah login karta
+        # hai, par safe mode agle token-check (har 6h) tak LIVE entries rokta
+        # rehta — ghanton ka blind window bina kisi wajah ke. Token wapas aate hi
+        # bahaal hona chahiye, isi jagah pe.
+        try:
+            import safe_mode
+            safe_mode.clear("broker_auth")
+        except Exception as _e:
+            print(f"[safe_mode] clear-on-login fail: {_e}", flush=True)
         return jsonify({"ok": True, "msg": "Kite access token saved", "alerts_cleared": n})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

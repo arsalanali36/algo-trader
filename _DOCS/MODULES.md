@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**155 modules documented** across 10 folders.
+**156 modules documented** across 10 folders.
 
 
 ## Folders
@@ -195,6 +195,17 @@ risk_gate.py — capital allocation gate (RMS Stage 1).
 - 🔧 `smart_size_enabled` — Is smart lot size-down ON for this strategy? Per-strategy `smart_size`
 - 🔧 `strategy_tier` — 'mission' (default — sees the full global cap) or 'discretionary' (a low-priority
 - 🔧 `target_sl_level` — Pure math: given the confirmed PEAK favourable MTM (₹, whole position)
+
+### `_core/safe_mode.py`
+SAFE MODE — jab broker/token bharosemand na ho to LIVE entry band, exit jaari.
+
+- 🔧 `active` — {reason: {since, detail}} — khaali dict = system healthy.
+- 🔧 `blocks_live_entry` — Gateway ke liye: (block: bool, reason_text: str).
+- 🔧 `clear` — Ek reason (ya sab, reason=None) hatao. Aakhri hatte hi 'fixed' jaata hai.
+- 🔧 `is_tripped` — …
+- 🔧 `note_order_result` — LIVE order ka nateeja record karo. Lagatar N fail -> trip.
+- 🔧 `status` — …
+- 🔧 `trip` — Safe mode ON kar do is reason ke liye. Idempotent (since preserve hota).
 
 ### `_core/singleton_guard.py`
 singleton_guard.py — OS-level "one process per strategy --id" lock.

@@ -89,6 +89,28 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
     except Exception:
         pass   # calendar unavailable → fail-open (loop-gate still applies)
 
+    # DEFAULT safe-mode guard — "broker bharosemand nahi hai" wala beech ka state.
+    # System ke paas pehle sirf chal-raha/band the; token mar jaane pe wo NAYI live
+    # entry try karta rehta tha jabki USI waqt exit complete nahi ho sakta tha
+    # (_do_squareoff "leaving position open, will retry" loop). Ye us combination
+    # ko rokta hai — risk badhna band, purani risk band karna jaari.
+    #
+    #   LIVE ENTRY -> band | EXIT -> jaari (alag function) | PAPER -> jaari
+    #
+    # PAPER ko chhuna sabse aasan galti hoti: user ka data-collection lane (14+
+    # paper strategies + option-chain lake) usi pe zinda hai. Isliye gate sirf
+    # mode=="live" pe. FAIL-OPEN — is guard me hi dikkat ho to trading na ruke.
+    if mode == "live":
+        try:
+            import safe_mode as _sm
+            _blk, _why = _sm.blocks_live_entry()
+            if _blk:
+                log(f"[GATEWAY] [SKIP] {symbol} LIVE entry — SAFE MODE ({_why}); "
+                    f"exit + paper chalu hain")
+                return _result(False, "blocked", f"safe_mode:{_why}", price=est_price)
+        except Exception:
+            pass   # fail-open
+
     # DEFAULT leg-collision guard (broker fungibility) — the MAIN GATE. A LIVE
     # strategy entry must NEVER land on a contract ANOTHER strategy already holds
     # open at the broker: option positions are fungible by CONTRACT, not strategy,
@@ -209,6 +231,14 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
                                          status=res.get("status") or "", tag=tag)
         except Exception:
             pass
+    # Safe-mode ko batao ki asli order gaya ya nahi — lagatar N live failures
+    # (auth/margin/broker down) khud safe mode trip kar denge. PAPER counter ko
+    # chhuta nahi (paper fail broker ke baare me kuch nahi kehta).
+    try:
+        import safe_mode as _sm
+        _sm.note_order_result(mode, bool(res.get("ok")), res.get("reason", ""))
+    except Exception:
+        pass
     return _result(bool(res.get("ok")), res.get("status") or ("failed" if not res.get("ok") else "paper"),
                    res.get("reason", ""), res.get("order_id"), res.get("price"), qty)
 
