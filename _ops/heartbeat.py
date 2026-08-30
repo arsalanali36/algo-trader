@@ -168,6 +168,76 @@ def holiday_coverage_warning():
         return None
 
 
+# Registry ke `status` ke wo values jinme LIVE trading ka iraada NAHI hai.
+# In pe config `mode=live + active` mila = strategy apni hi declared status ke
+# khilaf asli paisa laga rahi hai.
+_NON_LIVE_STATUS = ("paper", "research", "retired", "rejected", "test", "watch")
+
+
+def registry_vs_config():
+    """Registry ka declared `status` vs live config ka `mode`/`active` — mismatch list.
+
+    KYUN (2026-08-30): `range_hedged` (Ars chain hedged vertical) ki registry status
+    **paper** thi, par config me `active:true, mode:live` tha — aur usne 19-Aug ko
+    asli LIVE trade kar diya, jabki uska backtest Sharpe **negative** hai (~−1.0).
+    Kisi ko pata nahi chala; user ne haath se pakda.
+
+    Jad: registry ko hum status ka source of truth maante hain, par **registry aur
+    live config kabhi cross-check hote hi nahi the**. Do jagah "sach" likha tha aur
+    koi milata nahi tha — is repo ka sabse purana bug-shape (Rule 6B ka ulta).
+
+    Do tarah ke mismatch, alag severity (jaan-boojh kar):
+      * registry NON-LIVE  + config live+active → **error**: declared iraade ke
+        khilaf asli paisa lag raha hai
+      * registry `live`    + config band/paper  → **warn**: jo live samjhi ja rahi
+        hai wo chup-chaap trade hi nahi kar rahi (kam khatarnak, par jhoothi tasalli)
+
+    READ-ONLY — sirf padhta hai, kuch band/chalu nahi karta.
+    """
+    out = []
+    try:
+        import json as _js
+        import strategy_registry as _sr
+        cfg_path = BASE_DIR / "nifty_config.json"
+        cfg = _js.loads(cfg_path.read_text(encoding="utf-8")) if cfg_path.exists() else {}
+        regs = _sr.strategies() or {}
+    except Exception as e:
+        print("[heartbeat] registry check skip: " + str(e), flush=True)
+        return out
+
+    items = regs.values() if isinstance(regs, dict) else regs
+    for st in items:
+        if not isinstance(st, dict):
+            continue
+        ck = st.get("config_key")
+        if not ck:
+            continue
+        node = cfg.get(ck)
+        if not isinstance(node, dict):
+            continue
+        status = str(st.get("status") or "").strip().lower()
+        mode = str(node.get("mode") or "").strip().lower()
+        active = node.get("active")
+        # `enabled` un strategies ke liye jo top-level `active` nahi rakhtin
+        # (jaise _weekly_ironfly) — dono me se jo maujood ho.
+        on = bool(active) if active is not None else bool(node.get("enabled"))
+        name = st.get("name") or ck
+
+        if status in _NON_LIVE_STATUS and mode == "live" and on:
+            out.append({"level": "error", "config_key": ck, "name": name,
+                        "status": status, "mode": mode,
+                        "msg": ("🔴 %s (%s) — registry me status '%s' hai par config "
+                                "LIVE + chalu hai. Yaani apni declared status ke khilaf "
+                                "asli paisa laga rahi hai." % (name, ck, status))})
+        elif status == "live" and (mode != "live" or not on):
+            out.append({"level": "warn", "config_key": ck, "name": name,
+                        "status": status, "mode": mode,
+                        "msg": ("⚠️ %s (%s) — registry 'live' kehti hai par config "
+                                "mode=%s active=%s. Jo live samjhi ja rahi hai wo trade "
+                                "nahi kar rahi." % (name, ck, mode or "?", on))})
+    return out
+
+
 def safe_mode_status():
     try:
         import safe_mode
@@ -262,6 +332,11 @@ def run(dry=False, force_digest=False):
         _notify("warn", "📅 " + hw, "hb:holidays", dry)
     else:
         _resolve("hb:holidays", dry)
+
+    # 3d) registry status vs live config (declared iraada vs asli behaviour)
+    for m in registry_vs_config():
+        problems.append("%s: registry=%s config=%s" % (m["config_key"], m["status"], m["mode"]))
+        _notify(m["level"], m["msg"], "hb:regmode:" + m["config_key"], dry)
 
     # 4) safe mode (LIVE entry band — chup mat raho)
     sm = safe_mode_status()
