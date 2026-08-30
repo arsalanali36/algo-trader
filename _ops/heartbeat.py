@@ -143,6 +143,31 @@ def new_supervisor_events(state):
         return []
 
 
+DISK_WARN_PCT = 85      # is se upar -> warn
+DISK_CRIT_PCT = 92      # is se upar -> error (phone)
+
+
+def check_disk(path="/"):
+    """(pct_used, free_gb) — disk bharna ek chup-chaap killer hai: logs/lake
+    badhte rehte hain aur ek din write fail hone lagti hai. None = pata nahi chala."""
+    try:
+        import shutil
+        t, u, f = shutil.disk_usage(path)
+        return (100.0 * u / t), (f / (1024 ** 3))
+    except Exception:
+        return None, None
+
+
+def holiday_coverage_warning():
+    """NSE holiday list agle saal ke liye add hui ya nahi (market_calendar se —
+    wahi single source, yahan doosri copy nahi banayi)."""
+    try:
+        import market_calendar as mc
+        return mc.coverage_warning()
+    except Exception:
+        return None
+
+
 def safe_mode_status():
     try:
         import safe_mode
@@ -215,6 +240,28 @@ def run(dry=False, force_digest=False):
             problems.append(sid + " respawn fail")
             _notify("error", "🔴 " + sid + " ko wapas chalu nahi kar paya (" + det + ")",
                     "hb:respawnfail:" + sid, dry)
+
+    # 3b) disk (bharne se pehle bolo, bharne ke baad nahi)
+    pct, free = check_disk()
+    if pct is not None:
+        if pct >= DISK_CRIT_PCT:
+            problems.append("disk %.0f%% full" % pct)
+            _notify("error", "🔴 DISK %.0f%% bhar chuki (%.1f GB bachi) — "
+                    "write fail hone lagengi" % (pct, free), "hb:disk", dry)
+        elif pct >= DISK_WARN_PCT:
+            problems.append("disk %.0f%% full" % pct)
+            _notify("warn", "⚠️ Disk %.0f%% full (%.1f GB bachi)" % (pct, free),
+                    "hb:disk", dry)
+        else:
+            _resolve("hb:disk", dry)
+
+    # 3c) NSE holiday list agle saal ki add hui?
+    hw = holiday_coverage_warning()
+    if hw:
+        problems.append("holiday list")
+        _notify("warn", "📅 " + hw, "hb:holidays", dry)
+    else:
+        _resolve("hb:holidays", dry)
 
     # 4) safe mode (LIVE entry band — chup mat raho)
     sm = safe_mode_status()

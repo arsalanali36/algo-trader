@@ -69,12 +69,63 @@ def is_holiday(d):
     return MARKET_HOLIDAYS.get(_to_str(d))
 
 
+# ── COVERAGE GUARD (2026-08-30) ───────────────────────────────────────────────
+# Problem: list sirf un saalon ki hai jo neeche likhe hain. Jis saal ki list nahi
+# hai, us saal ka HAR weekday chup-chaap "trading day" ban jaata hai — yaani ~12
+# holidays pe system normally trade karne ki koshish karega, aur kisi ko pata bhi
+# nahi chalega. Ye wahi shakl hai jo is repo me baar-baar kaati hai: galat jawab
+# jo confident dikhta hai.
+#
+# Fix ka shape (jaan-boojh kar): jawab BADALTE nahi (uncovered saal me sab band
+# kar dena ek alag tarah ka chup-chaap nuksan hai — poora system ruk jayega),
+# par use LOUD kar dete hain — ek baar log + `coverage_warning()` jise heartbeat
+# ka roz ka digest phone tak le jaata hai. Ye guess se behtar hai: kisi aane wale
+# saal ki NSE holiday dates yahan "maan ke" likhna gap se zyada khatarnak hai.
+COVERED_YEARS = {int(k[:4]) for k in MARKET_HOLIDAYS}
+_WARNED_YEARS = set()
+
+# Kitne din pehle se agle saal ki list maangni shuru karein (NSE aam taur pe
+# December me publish karta hai).
+COVERAGE_LEAD_DAYS = 60
+
+
+def year_covered(y):
+    """Kya is saal ki holiday list yahan maujood hai?"""
+    return int(y) in COVERED_YEARS
+
+
+def coverage_warning(today=None):
+    """str (warning) ya None. Aaj ka saal cover nahi = abhi ka problem;
+    agla saal cover nahi aur wo paas hai = aane wala problem."""
+    t = _to_date(today) if today is not None else ist_now().date()
+    if not year_covered(t.year):
+        return (f"NSE holiday list me {t.year} hai hi nahi — us saal ki har chhutti "
+                f"abhi 'normal trading day' mani ja rahi hai. "
+                f"_core/market_calendar.py me {t.year} ki list add karo.")
+    nxt = t.year + 1
+    if not year_covered(nxt):
+        days_left = (_date(nxt, 1, 1) - t).days
+        if days_left <= COVERAGE_LEAD_DAYS:
+            return (f"{nxt} ki NSE holiday list abhi tak add nahi hui ({days_left} din bache) "
+                    f"— 1 Jan se har chhutti trading-day mani jayegi. "
+                    f"_core/market_calendar.py update karo.")
+    return None
+
+
 def is_trading_day(d=None):
     """True only on a normal NSE trading day: Mon–Fri AND not a listed holiday.
-    d = date/datetime/str; default = today (IST)."""
+    d = date/datetime/str; default = today (IST).
+
+    Agar us saal ki holiday list hi nahi hai to jawab weekday pe hi banta hai
+    (behaviour nahi badalta) par ek baar loud log nikalta hai — dekho
+    `coverage_warning()`."""
     dd = _to_date(d) if d is not None else ist_now().date()
     if dd.weekday() >= 5:            # Sat/Sun
         return False
+    if dd.year not in COVERED_YEARS and dd.year not in _WARNED_YEARS:
+        _WARNED_YEARS.add(dd.year)
+        print(f"[market_calendar] ⚠️  {dd.year} ki NSE holiday list missing — us saal ki "
+              f"chhuttiyan trading-day mani jayengi. List update karo.", flush=True)
     return _to_str(dd) not in MARKET_HOLIDAYS
 
 

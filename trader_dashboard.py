@@ -263,6 +263,30 @@ RANGE_CFG    = BASE_DIR / "range_config.json"
 UNIV_SCRIPT  = str(TRADERS_DIR / "universe_trader.py")
 UNIV_LOG     = BASE_DIR / "logs" / "universe_trader.log"
 CONFIG_FILE  = BASE_DIR / "data" / "config.json"
+
+
+def _write_json_atomic(path, obj, ensure_ascii=True):
+    """Config ko ATOMICALLY likho — tmp file + os.replace.
+
+    KYUN (2026-08-30, autonomy audit): `path.write_text(json.dumps(...))` file ko
+    TRUNCATE karke likhta hai. Us beech me process mara (deploy restart, OOM,
+    reboot) to config **aadhi likhi** reh jaati hai = corrupt JSON. Aur ye file
+    (`nifty_config.json`) har strategy ka mode/active/lots/RMS rakhti hai — corrupt
+    hui to agli subha kuch bhi start nahi hoga, aur wajah bhi nahi dikhegi.
+    `os.replace` POSIX pe atomic hai: ya poori nayi file, ya poori purani —
+    beech ka aadha-adhoora state kabhi nahi.
+
+    `_ops/token_refresh.py` isi ko pehle se karta hai (wo roz chalta hai);
+    ye usi ko baaki har config-writer tak le aata hai.
+    """
+    import os as _os
+    p = str(path)
+    tmp = p + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2, ensure_ascii=ensure_ascii)
+        f.flush()
+        _os.fsync(f.fileno())
+    _os.replace(tmp, p)
 NOTE_IMG_DIR = BASE_DIR / "data" / "note_images"
 RMS_AUDIT_FILE = BASE_DIR / "data" / "rms_audit_log.json"   # Task 13 — RMS value-change history
 NOTE_IMG_DIR.mkdir(parents=True, exist_ok=True)
@@ -2300,7 +2324,7 @@ def api_set_config():
     except Exception:
         old = {}
     _config_audit_record(old, data)   # log BEFORE overwrite — every field, not just _risk
-    TC_FILE.write_text(json.dumps(data, indent=2))
+    _write_json_atomic(TC_FILE, data)
     return jsonify({"msg": "Config saved successfully!"})
 
 def _risk_config():
@@ -2460,7 +2484,7 @@ def api_set_risk_config():
     new_risk = {"global": data.get("global") or {}, "per_strategy": data.get("per_strategy") or {}}
     _config_audit_record({"_risk": old_risk}, {"_risk": new_risk})   # Task 13 — diff before overwrite
     cfg["_risk"] = new_risk
-    TC_FILE.write_text(json.dumps(cfg, indent=2))
+    _write_json_atomic(TC_FILE, cfg)
     return jsonify({"msg": "Risk settings saved!"})
 
 @app.route('/api/sync-from-vps', methods=['POST'])
@@ -2946,7 +2970,7 @@ def api_start():
             cfg[s] = {}
         cfg[s]['active'] = True
         cfg[s]['mode'] = mode
-        TC_FILE.write_text(json.dumps(cfg, indent=2))
+        _write_json_atomic(TC_FILE, cfg)
     except Exception:
         pass
     via = " (supervisor)" if launched_via == 'supervisor' else ""
@@ -2980,7 +3004,7 @@ def api_stop():
                 if s not in cfg:
                     cfg[s] = {}
                 cfg[s]['active'] = False
-                TC_FILE.write_text(json.dumps(cfg, indent=2))
+                _write_json_atomic(TC_FILE, cfg)
             except Exception:
                 pass
         return jsonify({"msg": f"⏹ {strat_label(s)} stopped"})
@@ -3056,7 +3080,7 @@ def api_set_token():
             cfg['client_id'] = json.loads(base64.urlsafe_b64decode(payload)).get('dhanClientId') or cfg.get('client_id')
         except Exception:
             pass
-        CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+        _write_json_atomic(CONFIG_FILE, cfg)
         # Token saved → the Dhan-token problem is over. Drop ONLY its alerts, so
         # the next ingest poll marks them "✓ fixed" on the bell. `substr` covers
         # auto_data_downloader's legacy plain-string token alerts; the key covers
@@ -3210,7 +3234,7 @@ def api_kite_save_key():
         cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
         cfg["kite_api_key"]    = api_key
         cfg["kite_api_secret"] = api_secret
-        CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+        _write_json_atomic(CONFIG_FILE, cfg)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -7540,7 +7564,7 @@ def api_auto_straddle_config():
             cur["hedge"] = h
         cur["mode"] = "paper"
         cfg["_auto_straddle"] = cur
-        TC_FILE.write_text(json.dumps(cfg, indent=2))
+        _write_json_atomic(TC_FILE, cfg)
         return jsonify({"ok": True, "cfg": _auto_straddle_cfg()})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -8539,7 +8563,7 @@ def api_pine_attach_config(version):
                 for k in ("_module", "_lang", "active"):
                     parsed.pop(k, None)
                 all_cfg[sid].update(parsed)
-                TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
+                _write_json_atomic(TC_FILE, all_cfg, ensure_ascii=False)
         except Exception:
             pass
     return jsonify({"ok": True})
@@ -8667,7 +8691,7 @@ def api_pine_save():
                 parsed_cfg.pop(k, None)
             cfg_entry.update(parsed_cfg)
         all_cfg[script_id] = cfg_entry
-        TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
+        _write_json_atomic(TC_FILE, all_cfg, ensure_ascii=False)
         entry["script_id"] = script_id
 
     versions.append(entry)
@@ -8769,7 +8793,7 @@ def api_pine_delete(version):
             all_cfg = _json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
             if sid in all_cfg:
                 all_cfg.pop(sid, None)
-                TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
+                _write_json_atomic(TC_FILE, all_cfg, ensure_ascii=False)
         except Exception:
             pass
         for pyf in (BASE_DIR / 'strategies' / 'backtest' / f'{sid}.py',
@@ -9156,7 +9180,7 @@ def api_backtest_save_config():
     try:
         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
         cfg.setdefault(sid, {}).update(fields)
-        TC_FILE.write_text(json.dumps(cfg, indent=2))
+        _write_json_atomic(TC_FILE, cfg)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"msg": f"✅ {sid} config saved"})
@@ -9273,7 +9297,7 @@ def api_deploy_variation():
     entry['mode'] = 'paper'   # and never lands live on its own
     # merge over any existing same-name variation (re-deploy = same intent)
     all_cfg[newkey] = {**all_cfg.get(newkey, {}), **entry}
-    TC_FILE.write_text(json.dumps(all_cfg, indent=2, ensure_ascii=False))
+    _write_json_atomic(TC_FILE, all_cfg, ensure_ascii=False)
     return jsonify({"ok": True, "key": newkey})
 
 @app.route('/api/watch')

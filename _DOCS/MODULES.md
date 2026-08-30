@@ -74,11 +74,13 @@ leg_collision.py — keep two strategies off the SAME option contract.
 ### `_core/market_calendar.py`
 market_calendar.py — NSE trading-day / market-open SINGLE SOURCE OF TRUTH.
 
+- 🔧 `coverage_warning` — str (warning) ya None. Aaj ka saal cover nahi = abhi ka problem;
 - 🔧 `is_holiday` — Holiday name for that date, else None. (Does NOT count weekends — use
 - 🔧 `is_market_open` — True when `now` (naive IST datetime; default = ist_now()) is a trading day
 - 🔧 `is_trading_day` — True only on a normal NSE trading day: Mon–Fri AND not a listed holiday.
 - 🔧 `ist_now` — Naive IST datetime (UTC+5:30). Same convention traders use.
 - 🔧 `trading_days_between` — Count NSE trading days STRICTLY AFTER d0, up to and including d1 (default
+- 🔧 `year_covered` — Kya is saal ki holiday list yahan maujood hai?
 
 ### `_core/notify.py`
 notify.py — CODE3B ka notification centre (single source for "kuch galat hua").
@@ -1122,7 +1124,9 @@ goal_planner.py — "mujhe ₹X chahiye Y date tak" → lots ka basket, aur usko
 heartbeat.py — DEAD-MAN SWITCH: "koi khabar na aana" bhi ek khabar hai.
 
 - 🔧 `check_dashboard` — (alive, detail). None = pata nahi chala (jhootha alarm nahi bajana).
+- 🔧 `check_disk` — (pct_used, free_gb) — disk bharna ek chup-chaap killer hai: logs/lake
 - 🔧 `check_units` — [(unit, active, detail)] — systemd se. Linux ke bahar khaali list.
+- 🔧 `holiday_coverage_warning` — NSE holiday list agle saal ke liye add hui ya nahi (market_calendar se —
 - 🔧 `main` — …
 - 🔧 `new_supervisor_events` — Pichli baar ke baad ke naye supervisor events (respawn / give-up).
 - 🔧 `run` — …
