@@ -741,3 +741,33 @@ class KiteBroker(BaseBroker):
             # NOTE (same contract as DhanBroker.funds()): caller must treat
             # {} as "balance unknown" and fail-closed, not "balance is fine".
             return {}
+
+    def auth_ok(self):
+        """Kya aaj ka access-token ZINDA hai? -> (alive, msg).
+
+        alive: True = zinda | False = token dead/invalid | None = pata nahi chala
+        (network/rate-limit) — caller ise "dead" na samjhe.
+
+        Ye `funds()` se ALAG isliye hai: funds() har exception nigal ke `{}`
+        deta hai ("balance unknown" uska apna contract hai), to usse ye pata hi
+        nahi chalta ki token mara hai ya network hichki thi. Auth-monitoring ko
+        wo farq chahiye — warna token expire hone pe koi alert kabhi nahi jaata
+        (aur safe-mode kabhi trip nahi karta).
+
+        profile() = sabse halka authenticated read (koi order/margin side-effect
+        nahi).
+        """
+        try:
+            import kite_rate_limiter as _krl
+            kite = self._get_kite()
+            _krl.acquire("account")
+            p = kite.profile() or {}
+            return True, f"zinda ({p.get('user_id', '')})"
+        except Exception as e:
+            s = str(e)
+            low = s.lower()
+            dead = ("tokenexception" in type(e).__name__.lower()
+                    or "token" in low or "expired" in low or "invalid" in low
+                    or "incorrect" in low or "forbidden" in low
+                    or "missing" in low)          # _get_kite ka apna RuntimeError
+            return (False if dead else None), s[:150]

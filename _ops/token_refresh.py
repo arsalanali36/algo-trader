@@ -249,11 +249,12 @@ def kite_status():
         # `brokers` ek PACKAGE hai (root sys.path pe) — `kite_broker` top-level
         # module ke roop me import NAHI hota. Canonical entry = get_broker()
         # (Rule 6B: broker class se jao, uske internals se nahi).
+        #
+        # funds() se NAHI poochte: wo har exception nigal ke `{}` deta hai, to
+        # "token mara" aur "network hichki" ek jaise dikhte hain — aur phir alert
+        # kabhi jaata hi nahi. auth_ok() ye farq deta hai (True/False/None).
         from brokers import get_broker
-        f = get_broker("kite").funds() or {}
-        if not f:
-            return None, "funds() khaali laut aaya — token ka pata nahi chala"
-        return True, "zinda (funds read OK)"
+        return get_broker("kite").auth_ok()
     except Exception as e:
         s = str(e)
         if "Token" in s or "token" in s or "expired" in s.lower() or "Incorrect" in s:
