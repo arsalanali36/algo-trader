@@ -219,7 +219,10 @@ def sizing(strategy_id, cfg, lot_size, own_exit_pt=None,
     #   (c) long option BUY  : risk/lot = premium × lot_size          (e.g. 04.03.02, max loss = premium)
     # (b)/(c) me koi "stop points" hota hi nahi — unke liye `risk_per_lot_rs`
     # SEEDHA do. Formula aage wahi rehta hai; sirf per-lot risk ka source badalta hai.
-    explicit = _f(cfg.get("risk_per_lot_rs"), 0.0)
+    # `basket_sl_per_lot_rs` KHUD hi per-lot risk hai (basket SL = us trade ka max
+    # intended loss). Alag `risk_per_lot_rs` maangna = wahi number do jagah likhwana
+    # = drift ka naya darwaza. Isliye jo maujood ho, wahi use hota hai.
+    explicit = _f(cfg.get("risk_per_lot_rs"), 0.0) or _f(cfg.get("basket_sl_per_lot_rs"), 0.0)
 
     need = [("capital_rs", cap), ("risk_pct", pct)]
     if explicit <= 0:
