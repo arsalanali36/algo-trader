@@ -8174,8 +8174,23 @@ def _broker_open_snapshot(max_age=30):
         return _broker_open_cache["snap"], True
     try:
         from brokers.kite_broker import KiteBroker
+        _kb = KiteBroker()
+        # ⚠️ AUTH PEHLE. `positions_detailed()` har exception nigal ke `[]` deta hai
+        # (KiteBroker ka documented shape) — yaani **dead token aur sach me flat
+        # bilkul ek jaise dikhte hain**. Uske bharose `ok=True` set kar dena is
+        # poore fail-safe ko ulta kar deta hai: token marte hi book "khaali" padhi
+        # jaati hai aur har asli LIVE leg page se GAYAB ho jaati hai.
+        # Live-dekha 2026-08-30: Kite token dead, user ki 8 asli legs (4 weekly
+        # iron-fly + 4 manual, Zerodha pe khuli) page pe "koi open position nahi",
+        # aur invariant_guard "Zerodha mismatch (8)". Dono ki ek hi jad.
+        # Isliye khaali book pe bharosa TABHI jab auth khud verify ho jaye.
+        _alive, _why = _kb.auth_ok()
+        if _alive is not True:
+            print(f"[open-truth] broker auth not confirmed ({_why}) — position book "
+                  f"ko authoritative NAHI maana; DB-view hi dikhega", flush=True)
+            return _broker_open_cache["snap"], False
         snap = {}
-        for _p in (KiteBroker().positions_detailed() or []):
+        for _p in (_kb.positions_detailed() or []):
             try:
                 q = int(_p.get('qty') or 0)
             except (TypeError, ValueError):

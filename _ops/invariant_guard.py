@@ -117,6 +117,16 @@ def _broker_net_kite():
     try:
         from brokers import get_broker
         kb = get_broker("kite")
+        # ⚠️ AUTH PEHLE. `positions()` har exception nigal ke `{}` deta hai — yaani
+        # is `except` tak kabhi pahunchta hi nahi, aur **dead token "broker ke paas
+        # kuch nahi hai" jaisa padha jaata hai**. Us haalat me har asli open leg
+        # "mismatch" ban jaati hai (live-dekha 2026-08-30: token dead -> jhoothi
+        # "Zerodha mismatch (8)", jabki app aur broker dono ke paas wahi 8 legs
+        # thin). Ek jhootha alarm poore alarm channel ko wallpaper bana deta hai.
+        if hasattr(kb, "auth_ok"):
+            alive, _why = kb.auth_ok()
+            if alive is not True:
+                return None               # UNKNOWN — jhootha mismatch se behtar
         raw = kb.positions() or {}        # {kite_sym: signed_net}
     except Exception:
         return None
