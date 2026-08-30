@@ -372,7 +372,7 @@
    "config_key": "bnf_strangle_hedged",
    "slug": "bnf_strangle_hedged",
    "live_file": "strategies/live/bnf_strangle_trader.py",
-   "status": "paper",
+   "status": "live",
    "legs": 4,
    "instrument": "BANKNIFTY",
    "hold": "Positional (1-night)",
@@ -728,7 +728,7 @@
    ],
    "slug": "chain_zone_longatm",
    "live_file": "strategies/live/04_chainzone_trader.py",
-   "status": "paper",
+   "status": "live",
    "role": "child",
    "parent": "04.03",
    "transport": "python",
@@ -743,11 +743,13 @@
    "config_key": "weekly_ironfly_v1",
    "slug": "weekly_ironfly",
    "live_file": "_ops/weekly_ironfly_live.py",
-   "status": "paper",
+   "status": "live",
    "legs": 4,
    "instrument": "NIFTY",
    "hold": "Positional",
-   "structure": "Hedged short ATM straddle + wings (iron-fly), 50% credit target"
+   "structure": "Hedged short ATM straddle + wings (iron-fly), 50% credit target",
+   "settings_key": "_weekly_ironfly",
+   "_key_note": "order_store me strategy id `weekly_ironfly_v1` hai par nifty_config ka block `_weekly_ironfly` hai — do alag cheezein. settings_key isi liye explicit hai."
   },
   "02.18": {
    "name": "IV-pop M-rollover Iron-Fly",
@@ -774,7 +776,8 @@
    "aliases": [
     "delta_ironfly",
     "delta_ironfly_btc"
-   ]
+   ],
+   "note": "RUNNING BY USER DECISION (2026-08-29) - strategy/live code are CORRECT, do not 'fix' them. CAVEAT: the Phase-2 backtest behind this (backtest_delta.py build(ref_h=6)) chose the ATM strike from spot 6h AFTER entry (05:30 IST entry, 11:30 IST strike) = lookahead. Same script with one line fixed (build(d,H)): deployed H=12 goes +344.3/trade Sharpe 9.81 -> -54.7/trade Sharpe -1.31 (500d), and every entry time turns negative. Corrected full re-audit: -152.6/trade, Sharpe -4.50, p=1.000. Direct VRP measurement says BTC has no vol premium (weekly -100, daily -10 on the true 200 strike grid). Three independent routes agree: no edge. Short-run testnet profit is expected at ~55% win rate and is NOT evidence. Do not size up or move to real money on these stats. See scratch/delta_weekly_fly/README.md + LESSONS TRAP #190."
   },
   "02.07.02": {
    "name": "Straddle @ Alert — Naked Positional",

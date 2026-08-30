@@ -212,7 +212,11 @@ def registry_vs_config():
         ck = st.get("config_key")
         if not ck:
             continue
-        node = cfg.get(ck)
+        # Kuch strategies ka nifty_config BLOCK ka naam unke order_store id se alag
+        # hota hai (02.17: id `weekly_ironfly_v1`, block `_weekly_ironfly`). Aisi
+        # entries `settings_key` explicit deti hain — warna guard unhe dhundh hi
+        # nahi paata aur wo CHUP-CHAAP guard ke bahar reh jaati hain (blind spot).
+        node = cfg.get(st.get("settings_key") or ck)
         if not isinstance(node, dict):
             continue
         status = str(st.get("status") or "").strip().lower()
