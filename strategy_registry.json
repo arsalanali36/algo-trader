@@ -2,7 +2,7 @@
  "_meta": {
   "scheme": "family.member  (ID = NN.MM ; family = NN)",
   "rules": [
-   "An ID, once assigned, is PERMANENT â€” never renumber, never reuse, never re-map to a different strategy.",
+   "An ID, once assigned, is PERMANENT — never renumber, never reuse, never re-map to a different strategy.",
    "New strategy in an existing family -> next free member number (family.NM). Use strategy_registry.next_member(family).",
    "Brand-new family -> next free family number (NN) + member .01. Use strategy_registry.next_family().",
    "Rejected / failed / retired strategies KEEP their ID (status marks it); do NOT delete the row or reuse the number.",
@@ -10,28 +10,28 @@
    "status: paper | live | research | rejected | failed | legacy"
   ],
   "field_guide": {
-   "_intro": "Naming convention locked 2026-07-16. The rule that matters: an ID identifies the IDEA. Mode, transport, version and symbol are PROPERTIES â€” they never live in the name.",
-   "name": "'<Family> - <Role>'. Sentence case. BANNED tokens: _PAPER / _LIVE (mode is runtime and it lies â€” rsi_v1's config says mode:live), _V1 (version belongs to the script library), MAIN / default (say nothing).",
-   "config_key": "The EXACT key in nifty_config.json (or webhooks.<key>). This is what order_store.strategy + _risk.per_strategy are keyed on. NEVER rename it â€” that breaks P&L history and every RMS override.",
+   "_intro": "Naming convention locked 2026-07-16. The rule that matters: an ID identifies the IDEA. Mode, transport, version and symbol are PROPERTIES — they never live in the name.",
+   "name": "'<Family> - <Role>'. Sentence case. BANNED tokens: _PAPER / _LIVE (mode is runtime and it lies — rsi_v1's config says mode:live), _V1 (version belongs to the script library), MAIN / default (say nothing).",
+   "config_key": "The EXACT key in nifty_config.json (or webhooks.<key>). This is what order_store.strategy + _risk.per_strategy are keyed on. NEVER rename it — that breaks P&L history and every RMS override.",
    "aliases": "Older/other names this strategy is known by. resolve() matches these.",
-   "role": "reference | mirror | canary | standalone â€” what this deployment is FOR.",
-   "transport": "pine | python â€” who produces the signal. NOT part of the name.",
+   "role": "reference | mirror | canary | standalone — what this deployment is FOR.",
+   "transport": "pine | python — who produces the signal. NOT part of the name.",
    "mirrors": "ID this deployment is supposed to reproduce. A mirror's symbols + timeframe must match its reference; if they drift, the mirror is lying.",
-   "never_live": "true = must never place real orders, whatever `mode` says. Intent that a name cannot enforce (see 2026-07-16 finding: /api/start takes mode straight off a query param â€” no guard exists yet).",
+   "never_live": "true = must never place real orders, whatever `mode` says. Intent that a name cannot enforce (see 2026-07-16 finding: /api/start takes mode straight off a query param — no guard exists yet).",
    "desc": "Why this is alive. Required for anything a future reader might mistake for a duplicate and switch off."
   },
   "hidden": {
-   "_why": "Identifiers that must NOT appear in any strategy list, picker, RMS table or log sidebar. NOT a delete and NOT a P&L exclusion â€” every order_store row stays exactly where it is and still counts in the money. This only stops dead/garbage names being rendered AS strategies. Single source: every surface reads this list, so a new one can't drift.",
+   "_why": "Identifiers that must NOT appear in any strategy list, picker, RMS table or log sidebar. NOT a delete and NOT a P&L exclusion — every order_store row stays exactly where it is and still counts in the money. This only stops dead/garbage names being rendered AS strategies. Single source: every surface reads this list, so a new one can't drift.",
    "identifiers": {
-    "": "Blank strategy field â€” 65 orders (15 LIVE) with no owner. order_store.strategy has no validation; something writes empty. Source not yet found.",
+    "": "Blank strategy field — 65 orders (15 LIVE) with no owner. order_store.strategy has no validation; something writes empty. Source not yet found.",
     "unknown": "13 orders, all LIVE. Same root as the blank one.",
-    "ema920": "Its TradingView pine's strategy id â€” 42 real fills on 2026-06-25, never registered. History stays, but it is not a strategy to show.",
+    "ema920": "Its TradingView pine's strategy id — 42 real fills on 2026-06-25, never registered. History stays, but it is not a strategy to show.",
     "52_Week_Breakout | Price closing above 52-week EMA with high volume": "A DESCRIPTION written into the strategy field. 1 order.",
-    "global": "The webhooks map's shared config block â€” not a strategy at all. Was rendering as a fake row in the RMS table.",
-    "default": "Webhook fallback config, superseded by named webhooks (arschain_MAIN). Its 22 orders (12 LIVE) are REAL history from before the named webhooks existed â€” they still count.",
+    "global": "The webhooks map's shared config block — not a strategy at all. Was rendering as a fake row in the RMS table.",
+    "default": "Webhook fallback config, superseded by named webhooks (arschain_MAIN). Its 22 orders (12 LIVE) are REAL history from before the named webhooks existed — they still count.",
     "vrp_v1": "Dead config: present in config + RMS, zero orders, never registered. vrp_condor_v1 (02.03) is the live one.",
-    "webhook_v1": "The ORIGINAL single-webhook config (07.01), superseded by the per-strategy webhooks map. Zero orders. Kept because _all_webhooks() still falls back to it when the map is absent â€” so it stays FUNCTIONAL, just not shown. Hiding it removes the confusing second 'TradingView Webhook' row next to 04.04 DirectWebhook.",
-    "ema_v1": "Retired 2026-07-17 â€” zero orders ever placed, 4 MB/day of log noise, and it was the SILENT DEFAULT of /api/start (s='ema_v1'), /api/stop and /api/log (s='ema'), so any call with a wrong param name started or killed it by accident. Config key deleted; hidden here so no surface lists it."
+    "webhook_v1": "The ORIGINAL single-webhook config (07.01), superseded by the per-strategy webhooks map. Zero orders. Kept because _all_webhooks() still falls back to it when the map is absent — so it stays FUNCTIONAL, just not shown. Hiding it removes the confusing second 'TradingView Webhook' row next to 04.04 DirectWebhook.",
+    "ema_v1": "Retired 2026-07-17 — zero orders ever placed, 4 MB/day of log noise, and it was the SILENT DEFAULT of /api/start (s='ema_v1'), /api/stop and /api/log (s='ema'), so any call with a wrong param name started or killed it by accident. Config key deleted; hidden here so no surface lists it."
    },
    "_kept_visible": {
     "manual": "Arsalan's own manual Zerodha trades, tagged deliberately by broker_sync.reconcile_manual_trades(). Real and wanted."
@@ -65,7 +65,7 @@
   },
   "04": {
    "name": "Ars chain",
-   "desc": "Auto Rev-Chain â€” ONE idea, four deployments (pine on TV + python). Was called 'Range', which is why range_v1 looked like it belonged to a different strategy for a month."
+   "desc": "Auto Rev-Chain — ONE idea, four deployments (pine on TV + python). Was called 'Range', which is why range_v1 looked like it belonged to a different strategy for a month."
   },
   "05": {
    "name": "Indicator",
@@ -77,7 +77,7 @@
   },
   "07": {
    "name": "External",
-   "desc": "The webhook ENGINE's own generic config. Individual TV-driven strategies live in their LOGIC family (e.g. Ars chain -> 04.04), not here â€” a family is an idea, not a transport."
+   "desc": "The webhook ENGINE's own generic config. Individual TV-driven strategies live in their LOGIC family (e.g. Ars chain -> 04.04), not here — a family is an idea, not a transport."
   },
   "08": {
    "name": "Bollinger",
@@ -89,7 +89,7 @@
   },
   "10": {
    "name": "Factor / Equity",
-   "desc": "Cross-sectional / factor equity baskets â€” delivery, monthly rebalance (NOT the intraday options fleet)"
+   "desc": "Cross-sectional / factor equity baskets — delivery, monthly rebalance (NOT the intraday options fleet)"
   },
   "11": {
    "name": "Crypto (Delta)",
@@ -187,7 +187,7 @@
    "structure": "Naked ATM"
   },
   "01.02": {
-   "name": "Chain-Zone â€” Credit spread",
+   "name": "Chain-Zone — Credit spread",
    "config_key": null,
    "slug": "chain_zone_credit",
    "live_file": null,
@@ -198,7 +198,7 @@
    "structure": "Spread"
   },
   "01.03": {
-   "name": "Chain-Zone â€” Naked sell",
+   "name": "Chain-Zone — Naked sell",
    "config_key": null,
    "slug": "chain_zone_naked",
    "live_file": null,
@@ -209,7 +209,7 @@
    "structure": "Naked ATM"
   },
   "01.04": {
-   "name": "Chain-Zone â€” Positional (monthly)",
+   "name": "Chain-Zone — Positional (monthly)",
    "config_key": null,
    "slug": "chain_zone_positional",
    "live_file": null,
@@ -260,7 +260,7 @@
    "status": "research",
    "legs": 2,
    "role": "dessert",
-   "desc": "IV-filtered short strangle at recent range extremes (9:20 intraday, no overnight, SL-bounded). PF 2.04 / Sharpe 3.67 / tail-stress PASS â€” PAR DSR 0.62 borderline => forward-paper candidate, ORB ka diversifier (corr -0.50), standalone hero nahi.",
+   "desc": "IV-filtered short strangle at recent range extremes (9:20 intraday, no overnight, SL-bounded). PF 2.04 / Sharpe 3.67 / tail-stress PASS — PAR DSR 0.62 borderline => forward-paper candidate, ORB ka diversifier (corr -0.50), standalone hero nahi.",
    "instrument": "NIFTY",
    "hold": "Positional",
    "structure": "Strangle"
@@ -299,7 +299,7 @@
    "structure": "Short straddle"
   },
   "02.07.01": {
-   "name": "Straddle @ Alert â€” Hedged Live",
+   "name": "Straddle @ Alert — Hedged Live",
    "config_key": "straddle_alert_hedged",
    "slug": "straddle_alert_hedged",
    "live_file": "",
@@ -308,7 +308,7 @@
    "instrument": "NIFTY / BANKNIFTY",
    "hold": "Intraday",
    "structure": "Short straddle + far-OTM wings (iron fly)",
-   "desc": "LIVE hedged twin of 02.07. Same alert entry, but far-OTM protective wings (defined risk) + â‚¹4,000 (1% of â‚¹4L) COMBINED-BASKET SL/Target â€” whole group exits together (short legs buy-to-close FIRST, then wings), NOT per-leg. 4 lots fixed. Per-leg RMS default-SL disabled; only the basket rule governs. Parent 02.07 (paper, naked, point-exit) runs UNCHANGED for A/B. Money-path: execute_basket_exit ordered square-off. See ARCHITECTURE_LOG 2026-08-15."
+   "desc": "LIVE hedged twin of 02.07. Same alert entry, but far-OTM protective wings (defined risk) + ₹4,000 (1% of ₹4L) COMBINED-BASKET SL/Target — whole group exits together (short legs buy-to-close FIRST, then wings), NOT per-leg. 4 lots fixed. Per-leg RMS default-SL disabled; only the basket rule governs. Parent 02.07 (paper, naked, point-exit) runs UNCHANGED for A/B. Money-path: execute_basket_exit ordered square-off. See ARCHITECTURE_LOG 2026-08-15."
   },
   "02.08": {
    "name": "Straddle (manual)",
@@ -353,7 +353,7 @@
    "instrument": "NIFTY / BANKNIFTY",
    "hold": "Intraday",
    "structure": "Short straddle (auto-rolled)",
-   "desc": "ATM short straddle jo spot ~1 strike shift hone pe naye ATM pe roll hota hai â€” 6-rule gate (min-distance/confirmation/cooldown/premium-benefit/time-of-day/max-rolls). Self-contained: apna initial straddle khud kholta hai, phir har 5-min candle pe roll evaluate. PAPER + default OFF (backtest nahi hai â€” Rule 10). ADR-004 roller spec."
+   "desc": "ATM short straddle jo spot ~1 strike shift hone pe naye ATM pe roll hota hai — 6-rule gate (min-distance/confirmation/cooldown/premium-benefit/time-of-day/max-rolls). Self-contained: apna initial straddle khud kholta hai, phir har 5-min candle pe roll evaluate. PAPER + default OFF (backtest nahi hai — Rule 10). ADR-004 roller spec."
   },
   "02.10": {
    "name": "BNF 9:20 Short Strangle",
@@ -365,10 +365,10 @@
    "instrument": "BANKNIFTY",
    "hold": "Intraday",
    "structure": "Short strangle (naked)",
-   "desc": "BankNifty 09:20 SHORT strangle â€” 6-strike OTM CE+PE SELL, combined-premium 50pt target / 50pt SL, 14:55 close. Backtest 2021-26 REAL premium lake (no BS) + real Zerodha charges + DOM slip + date-aware lot (25/15/30): Sharpe 2.8, +Rs5.76L, worst din -Rs3,182 (~-Rs6k at current lot 30); har gate pass (6/6 saal +ve, OOS>train, sig p=0.003, MC not-overfit, slip x3). FORWARD-PAPER: naked seller, unmodeled >5% gap-day tail sample me nahi â†’ paper + disaster-wing before real money (Rule 10). Memory project_code3b_bnf_920_strangle."
+   "desc": "BankNifty 09:20 SHORT strangle — 6-strike OTM CE+PE SELL, combined-premium 50pt target / 50pt SL, 14:55 close. Backtest 2021-26 REAL premium lake (no BS) + real Zerodha charges + DOM slip + date-aware lot (25/15/30): Sharpe 2.8, +Rs5.76L, worst din -Rs3,182 (~-Rs6k at current lot 30); har gate pass (6/6 saal +ve, OOS>train, sig p=0.003, MC not-overfit, slip x3). FORWARD-PAPER: naked seller, unmodeled >5% gap-day tail sample me nahi → paper + disaster-wing before real money (Rule 10). Memory project_code3b_bnf_920_strangle."
   },
   "02.10.01": {
-   "name": "BNF 9:20 Strangle â€” Hedged Live",
+   "name": "BNF 9:20 Strangle — Hedged Live",
    "config_key": "bnf_strangle_hedged",
    "slug": "bnf_strangle_hedged",
    "live_file": "strategies/live/bnf_strangle_trader.py",
@@ -403,7 +403,7 @@
    "role": "canary",
    "transport": "python",
    "legs": 1,
-   "desc": "1m, NIFTY+BANKNIFTY. The FIRST pine->python attempt. Its signal fidelity no longer matters â€” what it is kept alive FOR is volume: it fires constantly and keeps surfacing edge cases in the SHARED money path (execution_gateway / risk_gate / order_store / pos_monitor) that the mission strategies also run on. TRAP #76, #83 and #84 all came out of this family. Do NOT switch it off as a 'duplicate' â€” it is the early-warning system. NOTE: 1m != the TV pine's 5m, so watching this chart tells you nothing about 04.03's fidelity.",
+   "desc": "1m, NIFTY+BANKNIFTY. The FIRST pine->python attempt. Its signal fidelity no longer matters — what it is kept alive FOR is volume: it fires constantly and keeps surfacing edge cases in the SHARED money path (execution_gateway / risk_gate / order_store / pos_monitor) that the mission strategies also run on. TRAP #76, #83 and #84 all came out of this family. Do NOT switch it off as a 'duplicate' — it is the early-warning system. NOTE: 1m != the TV pine's 5m, so watching this chart tells you nothing about 04.03's fidelity.",
    "instrument": "NIFTY",
    "hold": "Intraday",
    "structure": "Naked ATM"
@@ -422,7 +422,7 @@
    "transport": "python",
    "never_live": true,
    "legs": 1,
-   "desc": "1m, 23 F&O stocks. Same logic as 04.01, split off so NIFTY focus stays clean. never_live is the POINT of this split: these must never reach Zerodha. Today that is enforced by nothing but the `mode` flag â€” the _PAPER suffix is doing a job the code does not do.",
+   "desc": "1m, 23 F&O stocks. Same logic as 04.01, split off so NIFTY focus stays clean. never_live is the POINT of this split: these must never reach Zerodha. Today that is enforced by nothing but the `mode` flag — the _PAPER suffix is doing a job the code does not do.",
    "instrument": "Stocks",
    "hold": "Intraday",
    "structure": "Naked ATM"
@@ -441,7 +441,7 @@
    "mirrors": "04.04",
    "transport": "python",
    "legs": 1,
-   "desc": "THE ONE WITH A FUTURE. 5m NIFTY â€” the python twin of 04.04's pine, built to retire the webhook and its Rs 1,600/month TV subscription (Rs 19,200/yr). Offline fidelity is 90.2% exact / 93% entry (validate_strategy.py, VALIDATION_PLAYBOOK.md); live daily drift is not measured yet. The real question is not '1:1 exact?' but 'does the drift cost less than Rs 19,200/yr?' â€” a measurable question. 2026-07-16: its symbol list was the exact UNION of 04.01 + 04.02 (25 symbols), so stocks ate the capital and NIFTY got CAPITAL_BLOCKED â€” ONE NIFTY trade in a month. The mirror was not running. Must stay NIFTY-only: a mirror whose symbols do not match its reference is lying.",
+   "desc": "THE ONE WITH A FUTURE. 5m NIFTY — the python twin of 04.04's pine, built to retire the webhook and its Rs 1,600/month TV subscription (Rs 19,200/yr). Offline fidelity is 90.2% exact / 93% entry (validate_strategy.py, VALIDATION_PLAYBOOK.md); live daily drift is not measured yet. The real question is not '1:1 exact?' but 'does the drift cost less than Rs 19,200/yr?' — a measurable question. 2026-07-16: its symbol list was the exact UNION of 04.01 + 04.02 (25 symbols), so stocks ate the capital and NIFTY got CAPITAL_BLOCKED — ONE NIFTY trade in a month. The mirror was not running. Must stay NIFTY-only: a mirror whose symbols do not match its reference is lying.",
    "instrument": "NIFTY",
    "hold": "Intraday",
    "structure": "Naked ATM"
@@ -459,7 +459,7 @@
    "role": "reference",
    "transport": "pine",
    "legs": 1,
-   "desc": "5m NIFTY. Pine on TradingView -> alert() JSON -> webhook -> Kite. The REFERENCE 04.03 is measured against. Registered 2026-07-16 after it cost real money by NOT being registered: unknown to the registry it rendered in the RMS table's 'OTHER' bucket, its per-strategy override silently fell back to global, and it traded all day on a Rs 1,000/lot stop instead of the Rs 2,500/lot the 14-July rollout intended (that rollout landed on webhook_v1 â€” the generic config â€” not on the live strategy). Retire once 04.03 is trusted.",
+   "desc": "5m NIFTY. Pine on TradingView -> alert() JSON -> webhook -> Kite. The REFERENCE 04.03 is measured against. Registered 2026-07-16 after it cost real money by NOT being registered: unknown to the registry it rendered in the RMS table's 'OTHER' bucket, its per-strategy override silently fell back to global, and it traded all day on a Rs 1,000/lot stop instead of the Rs 2,500/lot the 14-July rollout intended (that rollout landed on webhook_v1 — the generic config — not on the live strategy). Retire once 04.03 is trusted.",
    "instrument": "NIFTY",
    "hold": "Intraday",
    "structure": "Naked ATM"
@@ -501,7 +501,7 @@
     "ema920",
     "EMA Crossover"
    ],
-   "desc": "RETIRED 2026-07-17 (Arsalan: \"iska koi kaam nahi, pareshaan itna kiya hai\"). In its whole life it placed ZERO orders â€” order_store has not a single ema_v1 row â€” while writing a 4 MB log/day and carrying TATAMOTORS (delisted, not in Dhan's scrip master) in its 25-symbol list, which is where a chunk of the daily error noise came from. Its config key + RMS override are deleted (safe precisely BECAUSE there were no rows to attribute). The 42 'ema920' rows stay: those are real fills from its TradingView pine (_PINE/v17) on 2026-06-25, and a real fill is history whoever owned it. ID kept per _meta.rules â€” an ID is permanent, never reused. strategies/live/nifty_ema_trader.py is left on disk; wip/ema-per-symbol-isolation still branches off it.",
+   "desc": "RETIRED 2026-07-17 (Arsalan: \"iska koi kaam nahi, pareshaan itna kiya hai\"). In its whole life it placed ZERO orders — order_store has not a single ema_v1 row — while writing a 4 MB log/day and carrying TATAMOTORS (delisted, not in Dhan's scrip master) in its 25-symbol list, which is where a chunk of the daily error noise came from. Its config key + RMS override are deleted (safe precisely BECAUSE there were no rows to attribute). The 42 'ema920' rows stay: those are real fills from its TradingView pine (_PINE/v17) on 2026-06-25, and a real fill is history whoever owned it. ID kept per _meta.rules — an ID is permanent, never reused. strategies/live/nifty_ema_trader.py is left on disk; wip/ema-per-symbol-isolation still branches off it.",
    "instrument": "NIFTY",
    "hold": "Intraday",
    "structure": "Naked ATM"
@@ -623,7 +623,7 @@
     "regime_momentum",
     "momentum_bot"
    ],
-   "desc": "Monthly cross-sectional momentum: rank F&O stocks by 12-1 month return, long top-decile (~21 names) equal-weight, + NIFTY 200-DMA regime gate (all-cash when NIFTY < 200-DMA). DIFFERENT VEHICLE â€” delivery equity, monthly rebalance, NOT the intraday options fleet; runs STANDALONE on the VPS (/root/markov_analysis, momentum-paper.timer Mon-Fri 16:40), NOT dashboard start/stop-managed. Forward-paper since 2026-07-20. Survivorship decisive-check PASSED (winners-vs-losers long-short t=3.01, no OOS decay = real factor, not illusion); headline 24% CAGR inflated by survivor names, honest deployable ~Sharpe 1.0 / CAGR 15-18% / maxDD -16% (200-DMA regime filter halves the drawdown). Real money GATED on GO_LIVE_CHECKLIST.md (Kite CNC delivery path to be BUILT + months of forward-paper proof). Live status page: http://72.61.173.32:5200/momentum_status.html",
+   "desc": "Monthly cross-sectional momentum: rank F&O stocks by 12-1 month return, long top-decile (~21 names) equal-weight, + NIFTY 200-DMA regime gate (all-cash when NIFTY < 200-DMA). DIFFERENT VEHICLE — delivery equity, monthly rebalance, NOT the intraday options fleet; runs STANDALONE on the VPS (/root/markov_analysis, momentum-paper.timer Mon-Fri 16:40), NOT dashboard start/stop-managed. Forward-paper since 2026-07-20. Survivorship decisive-check PASSED (winners-vs-losers long-short t=3.01, no OOS decay = real factor, not illusion); headline 24% CAGR inflated by survivor names, honest deployable ~Sharpe 1.0 / CAGR 15-18% / maxDD -16% (200-DMA regime filter halves the drawdown). Real money GATED on GO_LIVE_CHECKLIST.md (Kite CNC delivery path to be BUILT + months of forward-paper proof). Live status page: http://72.61.173.32:5200/momentum_status.html",
    "instrument": "Stocks",
    "hold": "Positional",
    "structure": "Cash Equity"
@@ -638,10 +638,10 @@
    "instrument": "NIFTY",
    "hold": "Intraday",
    "structure": "Short straddle (expiry-day 0DTE, 25% SL)",
-   "desc": "StockMock '42% NIFTY EXPIRY DAY' â€” SELL 6-lot ATM PE + 5-lot ATM CE @09:22, 25% per-leg SL, square-off-one, exit 15:15, weekly expiry-day only. Generic _sm runner (config-driven, backtest+paper same config)."
+   "desc": "StockMock '42% NIFTY EXPIRY DAY' — SELL 6-lot ATM PE + 5-lot ATM CE @09:22, 25% per-leg SL, square-off-one, exit 15:15, weekly expiry-day only. Generic _sm runner (config-driven, backtest+paper same config)."
   },
   "02.12": {
-   "name": "Short Strangle ATMÂ±100 (StockMock)",
+   "name": "Short Strangle ATM±100 (StockMock)",
    "config_key": "sm_nifty_strangle_v1",
    "slug": "sm_nifty_strangle_v1",
    "live_file": "_ops/sm_runner.py",
@@ -649,11 +649,11 @@
    "legs": 2,
    "instrument": "NIFTY",
    "hold": "Intraday",
-   "structure": "Short strangle (naked, ATMÂ±100, 25% SL)",
-   "desc": "StockMock '89% NIFTY strangle' â€” SELL 5-lot PE @ATM-100 + 5-lot CE @ATM+100, 25% per-leg SL, square-off-one, 09:22â†’15:15, NIFTY weekly, every day. Backtest NET +â‚¹2.89L (2021-07â†’) after charges. NAKED tail-risk, R/MDD ~1, 2026 bleeding â€” PAPER forward-watch."
+   "structure": "Short strangle (naked, ATM±100, 25% SL)",
+   "desc": "StockMock '89% NIFTY strangle' — SELL 5-lot PE @ATM-100 + 5-lot CE @ATM+100, 25% per-leg SL, square-off-one, 09:22→15:15, NIFTY weekly, every day. Backtest NET +₹2.89L (2021-07→) after charges. NAKED tail-risk, R/MDD ~1, 2026 bleeding — PAPER forward-watch."
   },
   "02.13": {
-   "name": "Short Strangle ATMÂ±1% (StockMock)",
+   "name": "Short Strangle ATM±1% (StockMock)",
    "config_key": "sm_nifty_atm1pct_v1",
    "slug": "sm_nifty_atm1pct_v1",
    "live_file": "_ops/sm_runner.py",
@@ -661,8 +661,8 @@
    "legs": 2,
    "instrument": "NIFTY",
    "hold": "Intraday",
-   "structure": "Short strangle (naked, ATMÂ±1%, 25% SL, 5 lot)",
-   "desc": "StockMock '55% ShortATMÂ±1%' â€” SELL 5-lot CE @ATM+1% + 5-lot PE @ATM-1%, 25% SL, square-off-one, 09:22â†’15:15, NIFTY weekly, daily. Backtest NET +â‚¹3.88L (2021-07â†’, 5 lot) â€” flat brokerage amortizes at 5 lots (1-lot was net-neg). Win 62.6% (â‰ˆStockMock 63%), R/MDD 2.51. 2026 bleeding (âˆ’â‚¹117k). PAPER forward-watch."
+   "structure": "Short strangle (naked, ATM±1%, 25% SL, 5 lot)",
+   "desc": "StockMock '55% ShortATM±1%' — SELL 5-lot CE @ATM+1% + 5-lot PE @ATM-1%, 25% SL, square-off-one, 09:22→15:15, NIFTY weekly, daily. Backtest NET +₹3.88L (2021-07→, 5 lot) — flat brokerage amortizes at 5 lots (1-lot was net-neg). Win 62.6% (≈StockMock 63%), R/MDD 2.51. 2026 bleeding (−₹117k). PAPER forward-watch."
   },
   "02.13.01": {
    "name": "Short Strangle ATM±1% + ±10 Hedge",
@@ -677,7 +677,7 @@
    "desc": "HEDGED twin of 02.13 — same ATM±1% short strangle + BUY ±10 wings (defined risk). Backtest NET +₹372,421 (2021-07→,5lot) vs naked ₹3.88L (only −4%!), Sharpe 0.745, win 52.0%, maxDD ₹141,348. **Margin ~₹55k vs naked ~₹9.8L (18× less) → RoC 40%→675%.** Wings held to EOD (no SL). PAPER forward-validation. Rule 10: significance untested. Memory project_code3b_hedged_strangle_family."
   },
   "02.14": {
-   "name": "Straddle-Width Strangle Â±1Ã—SP (StockMock)",
+   "name": "Straddle-Width Strangle ±1×SP (StockMock)",
    "config_key": "sm_nifty_swidth_v1",
    "slug": "sm_nifty_swidth_v1",
    "live_file": "_ops/sm_runner.py",
@@ -685,8 +685,8 @@
    "legs": 2,
    "instrument": "NIFTY",
    "hold": "Intraday",
-   "structure": "Short strangle (naked, ATMÂ±1Ã—straddle-premium, 25% SL, 5 lot)",
-   "desc": "StockMock '58% StraddleWidthÂ±1%' â€” SELL 5-lot CE @ATM+1Ã—SP + 5-lot PE @ATM-1Ã—SP (SP=ATM straddle premium pts), 25% SL, square-off-one, 09:22â†’15:15, NIFTY weekly, daily. Backtest NET +â‚¹3.09L (2021-07â†’,5lot), Sharpe 1.07, R/MDD 1.99, win 57.4%. 2026 bleeding âˆ’â‚¹135k. PAPER forward-watch."
+   "structure": "Short strangle (naked, ATM±1×straddle-premium, 25% SL, 5 lot)",
+   "desc": "StockMock '58% StraddleWidth±1%' — SELL 5-lot CE @ATM+1×SP + 5-lot PE @ATM-1×SP (SP=ATM straddle premium pts), 25% SL, square-off-one, 09:22→15:15, NIFTY weekly, daily. Backtest NET +₹3.09L (2021-07→,5lot), Sharpe 1.07, R/MDD 1.99, win 57.4%. 2026 bleeding −₹135k. PAPER forward-watch."
   },
   "02.14.01": {
    "name": "Straddle-Width Strangle + ±10 Hedge",
@@ -715,8 +715,8 @@
    "legs": 2,
    "instrument": "NIFTY",
    "hold": "Intraday",
-   "structure": "Hedged vertical (ATM sell + ~0.25Î” wing)",
-   "desc": "04.03 (naked Pine2Python mirror) ka HEDGED twin. Ars-chain signal SELLs the directional ATM option, and a ~0.25-delta wing is BOUGHT for defined risk (credit/debit vertical). 4L capital cap, 5 lots, â‚¹4,000 whole-basket SL/Target (position_exit_rules, ordered shorts-first exit) PLUS the strategy's own zone/ATR exit â€” whichever hits first. Wings-first unwind-safe entry (never naked). PAPER, NOT backtested as a spread (Rule 10 â€” forward-validate). Reuses range_trader signal engine + execution_gateway + strategy_safety.wing_by_delta. Config gitignored â†’ apply on VPS separately."
+   "structure": "Hedged vertical (ATM sell + ~0.25Δ wing)",
+   "desc": "04.03 (naked Pine2Python mirror) ka HEDGED twin. Ars-chain signal SELLs the directional ATM option, and a ~0.25-delta wing is BOUGHT for defined risk (credit/debit vertical). 4L capital cap, 5 lots, ₹4,000 whole-basket SL/Target (position_exit_rules, ordered shorts-first exit) PLUS the strategy's own zone/ATR exit — whichever hits first. Wings-first unwind-safe entry (never naked). PAPER, NOT backtested as a spread (Rule 10 — forward-validate). Reuses range_trader signal engine + execution_gateway + strategy_safety.wing_by_delta. Config gitignored → apply on VPS separately."
   },
   "04.03.02": {
    "name": "Ars chain - Directional BUY (long ATM)",
