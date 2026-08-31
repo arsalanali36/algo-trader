@@ -19,7 +19,7 @@ edge sach me badal gayi.
 Ye khud-ba-khud sample-size adjust karta hai - 10 trades pe bahut bada gap chahiye
 (kyunki 10 trades me kuch bhi ho sakta hai), 200 trades pe chhota gap kaafi hai.
 
-## Do check (dono per-lot pe, charges ke baad)
+## Do check (dono per-UNIT pe, charges ke baad)
 
   1. EXPECTANCY   live mean vs bootstrap distribution ka 5th percentile
   2. DRAWDOWN     live peak-to-trough vs run ka apna MC worst-5% DD
@@ -62,10 +62,6 @@ try:
     import notify
 except Exception:
     notify = None
-try:
-    import dhan_master
-except Exception:
-    dhan_master = None
 
 RUNS = os.path.join(ROOT, "scratch", "nifty_trend", "runs")
 
@@ -76,7 +72,6 @@ P_WATCH = 0.20         # p < 0.20  -> nazar rakho (AMBER)
 BOOT_ITERS = 20000
 LOOKBACK_DAYS = 400    # order_store range (positional netting, TRAP #141)
 
-_LOT_CACHE = {}
 _RID_CACHE = {}
 
 
@@ -101,32 +96,19 @@ def _resolved_id(key):
     return rid
 
 
-def _lot_size(sec_id, fallback=None):
-    """Contract ka lot size. Na mile to None - guess NAHI karte."""
-    if not sec_id:
-        return fallback
-    k = str(sec_id)
-    if k in _LOT_CACHE:
-        return _LOT_CACHE[k]
-    v = None
-    if dhan_master is not None:
-        for fn in ("get_lot_size_by_sec_id", "get_lot_size"):
-            f = getattr(dhan_master, fn, None)
-            if not f:
-                continue
-            try:
-                v = f(sec_id)
-                if v:
-                    break
-            except Exception:
-                v = None
-    _LOT_CACHE[k] = v or fallback
-    return _LOT_CACHE[k]
+# NOTE (why per-UNIT, not per-lot):
+# Pehla version har trade ko lot_size se divide karta tha. dhan_master ka lot-size lookup
+# EXPIRED contracts pe kachra deta hai - straddle_v1 ki har trade qty=65 thi par resolve
+# hue "lots" 0.02 se 2.6 tak the, jisse per-lot numbers 26x inflate ho gaye (raw gross
+# -Rs10,940 -> mera -Rs2,82,510). Bilkul TRAP #197 wali shakl, aur wo bhi usi tool me jo
+# aise bug pakadne ko bana hai.
+# `qty` dono taraf (backtest all_trades aur order_store) EXACT record hoti hai, isliye
+# per-unit (pnl/qty) hi wo paimana hai jo bina kisi lookup ke sach rehta hai.
 
 
 # ── backtest side ──────────────────────────────────────────────────────────
 def load_backtest(slug):
-    """Run ka per-LOT net array + uska apna MC worst-5% DD (per lot). None if absent."""
+    """Run ka per-UNIT net array + uska apna MC worst-5% DD (per unit). None if absent."""
     p = os.path.join(RUNS, slug, "results.js")
     if not os.path.exists(p):
         return None
@@ -140,38 +122,39 @@ def load_backtest(slug):
     if not c:
         return None
     meta = R.get("meta") or {}
-    lot_size = float(meta.get("lot_size") or 0) or None
     nets = []
     for t in c.get("all_trades") or []:
         if t.get("pnl") is None:
             continue
         qty = float(t.get("qty") or 0)
-        lots = (qty / lot_size) if (lot_size and qty) else float(meta.get("lots") or 1)
-        if lots <= 0:
+        if qty <= 0:
             continue
-        nets.append(float(t["pnl"]) / lots)
+        nets.append(float(t["pnl"]) / qty)          # per UNIT
     if len(nets) < 50:
         return None
     net = np.array(nets, float)
-    # run ka apna MC worst-5% maxDD, per lot (% of start_cap -> Rs -> per lot)
-    dd_per_lot = None
+    # MC worst-5% DD ko bhi per-UNIT me laao: run ka DD% x start_cap = Rs at the run's
+    # own size; usko run ke apne avg qty se divide karo.
+    dd_unit = None
     try:
         mc = (c.get("mc") or {}).get("table", {}).get("maxdd")
         cap = float(meta.get("start_cap") or 0)
-        run_lots = float(meta.get("lots") or 1)
-        if mc and len(mc) > 1 and cap and run_lots:
-            dd_per_lot = abs(float(mc[1])) / 100.0 * cap / run_lots
+        qtys = [float(t.get("qty") or 0) for t in (c.get("all_trades") or [])]
+        qtys = [q for q in qtys if q > 0]
+        avg_qty = (sum(qtys) / len(qtys)) if qtys else 0
+        if mc and len(mc) > 1 and cap and avg_qty:
+            dd_unit = abs(float(mc[1])) / 100.0 * cap / avg_qty
     except Exception:
-        dd_per_lot = None
-    if not dd_per_lot:
+        dd_unit = None
+    if not dd_unit:
         eq = np.cumsum(net)
-        dd_per_lot = abs(float((eq - np.maximum.accumulate(eq)).min()))
-    return dict(net=net, dd_per_lot=dd_per_lot, n=len(net))
+        dd_unit = abs(float((eq - np.maximum.accumulate(eq)).min()))
+    return dict(net=net, dd_per_lot=dd_unit, n=len(net))
 
 
 # ── live side ──────────────────────────────────────────────────────────────
 def load_live(config_key, window_days=None, _cache={}):
-    """Live/paper completed trades -> per-LOT NET array (charges ke baad), time-ordered."""
+    """Live/paper completed trades -> per-UNIT NET array (charges ke baad), time-ordered."""
     key = "rows"
     if key not in _cache:
         today = dt.date.today()
@@ -204,12 +187,6 @@ def load_live(config_key, window_days=None, _cache={}):
         qty = float(t.get("qty") or 0)
         if qty <= 0:
             continue
-        ls = _lot_size(t.get("sec_id"))
-        if not ls:
-            continue
-        lots = qty / float(ls)
-        if lots <= 0:
-            continue
         gross = float(t.get("pnl") or 0.0)
         fee = 0.0
         if CH is not None:
@@ -220,7 +197,7 @@ def load_live(config_key, window_days=None, _cache={}):
                     when=t.get("entry_date")))
             except Exception:
                 fee = 0.0
-        out.append(dict(d=xd, net=(gross - fee) / lots, mode=t.get("mode")))
+        out.append(dict(d=xd, net=(gross - fee) / qty, mode=t.get("mode")))   # per UNIT
     out.sort(key=lambda r: r["d"])
     return out
 
@@ -253,8 +230,12 @@ def assess(sid, name, config_key, slug, window_days=None):
     live_dd = abs(float((eq - np.maximum.accumulate(eq)).min()))
     dd_breach = live_dd > bt["dd_per_lot"]
 
-    if p < P_DEAD or dd_breach:
-        verdict = "decayed"
+    # DD breach aur decay DO ALAG cheezein hain. 02.07 pe live expectancy backtest se
+    # BEHTAR thi (p=1.000) par DD bada tha - use "edge mar gayi" bolna jhooth hota.
+    if p < P_DEAD:
+        verdict = "decayed"          # kamai backtest se saaf peeche
+    elif dd_breach:
+        verdict = "risk"             # kamai theek, par girawat bad-luck limit se aage
     elif p < P_WATCH:
         verdict = "watch"
     else:
@@ -301,7 +282,12 @@ def run(window_days=None, only=None, do_notify=False):
     if do_notify and notify is not None:
         for r in rows:
             key = "decay:%s" % r.get("ck")
-            if r["verdict"] == "decayed":
+            if r["verdict"] == "risk":
+                notify.warn("%s - %s: kamai theek hai (p=%.2f) par girawat Rs%s/unit bad-luck "
+                            "limit Rs%s se aage. Size/DD budget dekho."
+                            % (r["id"], r["name"], r["p"], r["live_dd"], r["bt_dd"]),
+                            key=key, source="decay")
+            elif r["verdict"] == "decayed":
                 why = []
                 if r.get("p", 1) < P_DEAD:
                     why.append("expectancy Rs%s/lot vs backtest Rs%s (p=%.3f)"
@@ -325,7 +311,7 @@ def run(window_days=None, only=None, do_notify=False):
     return rows
 
 
-_ICON = {"decayed": "RED  ", "watch": "AMBER", "healthy": "green",
+_ICON = {"decayed": "RED  ", "risk": "RISK ", "watch": "AMBER", "healthy": "green",
          "insufficient": "  -  ", "no_backtest": "  -  ", "error": "ERR  "}
 
 
@@ -333,11 +319,12 @@ def print_report(rows):
     print("=" * 104)
     print("STRATEGY DECAY WATCH  -  live/paper trades vs unke apne backtest ki distribution")
     print("=" * 104)
-    live = [r for r in rows if r["verdict"] in ("decayed", "watch", "healthy")]
+    live = [r for r in rows if r["verdict"] in ("decayed", "risk", "watch", "healthy")]
     if live:
         print("\n%-9s %-28s %6s %11s %11s %8s %10s %10s" %
-              ("verdict", "strategy", "n", "live/lot", "backtest", "p", "live DD", "limit"))
-        for r in sorted(live, key=lambda x: (x["verdict"] != "decayed", x["verdict"] != "watch", x["id"])):
+              ("verdict", "strategy", "n", "live/unit", "backtest", "p", "live DD", "limit"))
+        _ord = {"decayed": 0, "risk": 1, "watch": 2, "healthy": 3}
+        for r in sorted(live, key=lambda x: (_ord.get(x["verdict"], 9), x["id"])):
             print("%-9s %-28s %6d %11s %11s %8.3f %10s %10s%s" %
                   (_ICON[r["verdict"]], ("%s %s" % (r["id"], r["name"]))[:28], r["n"],
                    r["live_mean"], r["bt_mean"], r["p"],
@@ -351,6 +338,8 @@ def print_report(rows):
                                          r.get("msg", "")))
     print("\n  p = agar edge ZINDA hoti, to itne trades me itna bura ya usse bura kitni baar aata.")
     print("  p >= 0.20 healthy  |  0.05-0.20 nazar rakho  |  < 0.05 edge badal gayi")
+    print("  RISK = kamai theek par girawat backtest ki bad-luck limit se aage (size ka sawaal).")
+    print("  Sab numbers PER UNIT hain (per lot nahi) - qty dono taraf exact record hoti hai.")
     print("  Ye kabhi kuch band nahi karta - sirf batata hai.")
 
 
