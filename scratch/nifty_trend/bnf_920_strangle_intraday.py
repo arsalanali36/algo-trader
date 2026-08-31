@@ -163,6 +163,22 @@ def load_grid(include_live=True):
 _FALLBACK = [0, 0]  # [out-of-window reads, total reads]
 
 
+class LakeCoverageError(RuntimeError):
+    """A fixed strike walked outside the ATM-relative lake window (TRAP #198)."""
+
+
+STRICT = False        # True -> raise instead of inventing an intrinsic price
+_OOB = [0, 0]         # [outside -10..+10 window, inside window but cell empty]
+
+
+def oob_report(reset=True):
+    """(outside, empty_cell) since the last reset — call after any backtest run."""
+    out = tuple(_OOB)
+    if reset:
+        _OOB[0] = _OOB[1] = 0
+    return out
+
+
 def _px(g, i, side, K):
     off = int(round((K - g["ATMK"][i]) / STEP))
     _FALLBACK[1] += 1
@@ -170,9 +186,27 @@ def _px(g, i, side, K):
         v = (g["CE"] if side == "CE" else g["PE"])[i, off + 10]
         if v and not np.isnan(v) and v > 0:
             return float(v)
+    # ── TRAP #198 ──────────────────────────────────────────────────────────────
+    # The lake is ATM-RELATIVE (offsets -10..+10 of THIS bar's ATM) but a trade
+    # holds a FIXED strike, so ATM drift walks the strike out of the window. The
+    # old code then returned intrinsic value — 0 for an OTM leg — which reads as
+    # "short bought back for free". It cost 02.10.01 its entire published edge:
+    # 19.1% of trades contaminated, carrying 80.1% of the reported profit, at an
+    # 88% win rate vs 48% for clean trades. Silence was the whole problem, so the
+    # miss is now counted separately and, under STRICT, refuses to invent a price.
     _FALLBACK[0] += 1
+    if -10 <= off <= 10:
+        _OOB[1] += 1                       # in window, but the lake cell is empty
+    else:
+        _OOB[0] += 1                       # strike is outside the lake entirely
+        if STRICT:
+            raise LakeCoverageError(
+                "strike %s is %d strikes from ATM %s at bar %d — outside the lake's "
+                "-10..+10 window. Refusing to substitute intrinsic value (TRAP #198). "
+                "Widen the lake (optchain_dl.py --off-range) or move the strike in."
+                % (K, off, g["ATMK"][i], i))
     S = g["SPOT"][i]
-    return max(0.0, (S - K) if side == "CE" else (K - S))
+    return max(0.0, (S - K) if side == "CE" else (K - S))  # intrinsic-ok: kept for the ~50 legacy call sites, but no longer silent — counted in _OOB/oob_report() and raises under STRICT; the publish path asserts coverage (_assert_lake_coverage, TRAP #198)
 
 
 def run(g, mode, skip_expiry=True):

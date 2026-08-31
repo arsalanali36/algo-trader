@@ -51,8 +51,14 @@ SIDES = [("CE", "CALL"), ("PE", "PUT")]
 
 INDEX_START = dt.date(2021, 7, 1)          # ~5yr expired-option depth
 STOCK_YEARS = 3
-INDEX_OFF_RANGE = 10
+INDEX_OFF_RANGE = 10             # default; override with --off-range N
 STOCK_OFF_RANGE = 5
+
+# TRAP #198: the lake is ATM-RELATIVE, but a positional trade holds a FIXED strike.
+# ATM drift walks that strike out of the window and every reader then has to guess.
+# The window must be wider than the ATM drift a trade can survive, NOT just wide
+# enough to hold the strikes at entry. +-10 was only enough for the entry snapshot;
+# it left 19% of 02.10.01's trades priced at invented intrinsic values.
 
 
 def _tok():
@@ -136,7 +142,8 @@ def _build_specs(argv):
             if sym not in opt_hist.INDEX_UNDERLYINGS:
                 print("  ! skip unknown index underlying:", sym, flush=True); continue
             sid, instr = opt_hist.INDEX_UNDERLYINGS[sym]
-            specs.append((sym, sid, instr, ["WEEK", "MONTH"], INDEX_OFF_RANGE, INDEX_START))
+            specs.append((sym, sid, instr, ["WEEK", "MONTH"],
+                          int(_arg_val("--off-range", INDEX_OFF_RANGE)), INDEX_START))
     # stocks
     if want_stocks:
         syms = stock_syms or sorted(set(universe.LIQUID_PREMIUM) |

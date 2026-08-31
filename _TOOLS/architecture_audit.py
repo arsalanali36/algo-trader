@@ -685,6 +685,54 @@ def check_pe_offset_sign(path, src, tree, findings):
 _INLINE_LIVE_PREFIXES = ("strategies/live/", "_TRADERS/")
 
 
+# ---------------------------------------------------------------------------
+# LAKE-SILENT-INTRINSIC — an ATM-relative premium-lake lookup that, on a miss,
+# quietly returns intrinsic value instead of saying "I don't have this price".
+#
+# The lake is indexed by offset from the CURRENT bar's ATM (a bounded window like
+# -10 <= off <= 10), but a trade holds a FIXED strike, so ATM drift walks the
+# strike out of the window. Returning max(0, S-K) there prices an OTM short at
+# ZERO — it reads as "bought back for free", a guaranteed win, and the run still
+# looks completely plausible. On 02.10.01 that made 19.1% of trades contaminated,
+# carrying 80.1% of the reported profit at an 88% win rate versus 48% for clean
+# trades (TRAP #198). It had already been copy-pasted into a second file.
+#
+# A miss must return None/NaN — see scratch/strangle_roll/engine.py::_prem, whose
+# callers skip the trade, which is why 02.17 weekly iron-fly is trustworthy — or
+# raise (bnf_920_strangle_intraday.STRICT), or be explicitly acknowledged.
+#
+# Deliberately NARROW so it cannot cry wolf: it fires only when an intrinsic
+# return sits inside a bounded ATM-offset window lookup. A Black-Scholes pricer
+# at T<=0, expiry settlement, and anything without an offset window are all
+# invisible to it — intrinsic is correct or irrelevant there.
+# Escape hatch: `# intrinsic-ok: <reason>` on the return line.
+_OFFSET_WINDOW_RE = re.compile(r"-\s*\d+\s*<=\s*\w+\s*<=\s*\d+")
+_INTRINSIC_RET_RE = re.compile(
+    r"return\s+max\(\s*0(?:\.0)?\s*,\s*\(?\s*[A-Za-z_]\w*\s*-\s*[A-Za-z_]\w*")
+
+
+def check_lake_silent_intrinsic(path, src, findings):
+    lines = src.splitlines()
+    for i, raw in enumerate(lines, 1):
+        code = raw.split("#", 1)[0]
+        if not _INTRINSIC_RET_RE.search(code):
+            continue
+        if "intrinsic-ok" in raw.lower():
+            continue
+        # only inside an ATM-offset window lookup — that is the TRAP #198 shape
+        ctx = chr(10).join(lines[max(0, i - 15):i])
+        if not _OFFSET_WINDOW_RE.search(ctx):
+            continue
+        findings.append(Finding(
+            "FAIL", "LAKE-SILENT-INTRINSIC", rel(path), i,
+            "ATM-offset lake lookup falls back to INTRINSIC value when the strike "
+            "leaves the window — an OTM leg silently becomes 0, i.e. a short "
+            "'bought back for free', and the backtest still looks real (TRAP #198: "
+            "19% of trades carried 80% of the reported profit). Return None/NaN and "
+            "let the caller skip the trade (scratch/strangle_roll/engine.py::_prem) "
+            "or raise; add '# intrinsic-ok: <reason>' only if intrinsic is truly right"))
+
+
 def check_inline_signal(path, src, findings):
     rp = rel(path).replace(os.sep, "/")
     if not any(rp.startswith(p) for p in _INLINE_LIVE_PREFIXES):
@@ -739,6 +787,7 @@ def audit(files):
         check_recover_field(path, src, tree, findings)
         check_pe_offset_sign(path, src, tree, findings)
         check_inline_signal(path, src, findings)
+        check_lake_silent_intrinsic(path, src, findings)
     return findings
 
 
