@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**158 modules documented** across 10 folders.
+**159 modules documented** across 10 folders.
 
 
 ## Folders
@@ -983,6 +983,16 @@ daily_report.py — one-scroll EOD "Daily Report" data builder. DISPLAY-ONLY.
 - 🔧 `build` — …
 - 🔧 `get_settings` — Report settings for the ⚙ modal — capital (for net %) + per-strategy
 - 🔧 `save_settings` — …
+
+### `_ops/decay_watch.py`
+decay_watch.py - "strategy chup-chaap marr to nahi gayi?" ka alarm.
+
+- 🔧 `assess` — …
+- 🔧 `load_backtest` — Run ka per-LOT net array + uska apna MC worst-5% DD (per lot). None if absent.
+- 🔧 `load_live` — Live/paper completed trades -> per-LOT NET array (charges ke baad), time-ordered.
+- 🔧 `main` — …
+- 🔧 `print_report` — …
+- 🔧 `run` — …
 
 ### `_ops/delta_feed.py`
 delta_feed.py — Delta Exchange India crypto data feed for the /crypto page.
