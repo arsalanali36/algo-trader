@@ -5190,3 +5190,109 @@ har trade pe `oob` flag likhta hai (sirf **lake se priced** legs pe — BS wings
 02.10.01 ka run page **NOT PROVEN** mark ho gaya (`meta.json`), strategy PAPER pe hai,
 koi live paisa nahi. **Lake chaudi kiye bina koi re-run nahi** — `optchain_dl.py` ko
 ±20 offset tak dobara chalana padega.
+
+---
+
+## TRAP #199 — Black-Scholes option BUYERS ko chamkata hai: 7 me se 4 runs real premium pe MAR gaye, aur bachi 3 ko Sharpe-only gate phenk raha tha (2026-08-31)
+
+**Sawaal user ka tha:** *"04.03.02 bhi real pe nahi tha kya?"* — nahi tha. Aur jab saare
+BS-proved runs real lake pe reprice kiye, do alag baatein nikleen — ek buri, ek achhi.
+
+### Buri: BS buyer ka theta kam aankta hai
+
+| run | strategy | BS Sh | **REAL Sh** | **REAL net** |
+|---|---|---|---|---|
+| mid_orb_nifty | `orb_v1` | 2.37 | **0.67** | +₹1,03,822 |
+| orb_supertrend | `orbst_v1` | 2.06 | **0.93** | +₹1,41,001 |
+| chain_zone_longatm | `chainzone_v1` | 1.95 | **0.88** | +₹2,34,804 |
+| debit_vertical_orb | `dvert_v1` | 1.67 | **−0.34** | **−₹59,332** |
+| ratio_backspread | `backspread_v1` | 1.55 | **−1.13** | **−₹1,70,296** |
+| long_straddle_orb | `straddle_v1` | 3.55 | **−1.52** | **−₹2,90,765** |
+| long_strangle_orb | (not deployed) | 4.08 | **−2.26** | **−₹3,55,655** |
+
+**Jitna BS pe accha, utna real pe kharab** — `long_strangle_orb` ka BS Sharpe sabse ooncha
+(4.08) aur real me sabse ghatiya (−2.26). Saari option **KHARIDNE** wali hain; BS jo theta
+bleed model karta hai wo asli se kam hai.
+
+### Sabse chubhne wali baat: tool 20 July se maujood tha
+
+`bs_vs_reallake.py` ke apne docstring me likha hai: *"BS understates the theta an option
+BUYER actually bleeds, so ATM-buy / long-vol strategies look far better on BS than they
+trade on real data."* **Warning likhi thi, tool bana tha, chalaya kabhi nahi.** Tab se
+strategies deployed rahin aur run pages "● GENUINE EDGE" chhapte rahe. Aaj ke din ki
+teesri baar wahi shape: `chain_zone_naked` ka rejected result 6 din disk pe pada tha,
+9:10 auto-start 6 din chup-chaap mara pada tha (TRAP #120).
+
+### Achhi: SHARPE-ONLY gate teen asli edge phenk raha tha
+
+Maine pehle bola *"Sharpe 0.88 → gate fail"*. **Wo framing galat thi.** User ne pakda:
+*"buying strategies ka win-rate waise bhi kam hota hai; RR accha ho to deployable ho
+sakti hai na?"* Naapa gaya, aur wo sahi the:
+
+| run | Sh | PF | win% | **RR** | exp/trade | **p-value** |
+|---|---|---|---|---|---|---|
+| orb_supertrend | 0.93 | 1.44 | 36.8% | **2.46** | +₹247 | **0.0062** |
+| chain_zone_longatm | 0.88 | 1.26 | 36.7% | **2.17** | +₹228 | **0.0081** |
+| mid_orb_nifty | 0.67 | 1.24 | 39.0% | **1.94** | +₹183 | **0.0343** |
+| dvert / backspread / straddle / strangle | <0 | <1 | — | — | <0 | **0.83 – 1.00** |
+
+37% win rate + RR ~2 = PF > 1.2 aur **p < 0.05**. Gate ke asli daant **p-value + paisa
+positive** hain; **Sharpe ≥ 1 sirf proxy hai**. Sharpe pe hi rukte to teen asli edge
+phenk dete — aur chaar murde phir bhi pakad me aa jaate (p = 0.83…1.00).
+
+**"Agar luck 0 ho to?"** ka jawab permutation p-value hai, Sharpe nahi. 04.03.02 ka
+0.0081 = random entries pe itna result 1000 me 8 baar.
+
+### Execution cost — kyun ye 3 deployable hain aur 02.10.01 nahi
+
+Asli collector bid/ask se naapa (koi model nahi):
+
+```
+NIFTY  ATM 1 leg  1 lot : spread 0.18 pt -> Rs11 round trip  = expectancy Rs228 ka  5%
+BNF 4-leg far-OTM monthly: spread                 Rs1,974     = Rs4,000 stop ka    49%
+```
+Ek single ATM NIFTY leg lagbhag muft trade hoti hai; 4 far-OTM monthly legs ka structure
+apne hi spread me doob jaata hai. **Yehi wajah hai ki ek hi din me 02.10.01 REJECT hui aur
+ye teen ZINDA bache.** (caveat: sirf 18 spread samples — data badhne pe dobara naapo)
+
+### Sabak
+1. **BS option BUYERS ko chamkata hai.** Koi bhi long-premium run real lake pe reprice
+   kiye bina deploy mat karo. Sign tak palat jaata hai.
+2. **Sharpe akela gate nahi hai.** Low win-rate + high RR asli edge ho sakta hai —
+   `PF > 1 + p < 0.05 + paisa positive` dekho. Sharpe se equity ki *chikni-pan* pata
+   chalti hai, edge ki *maujoodgi* nahi.
+3. **Sharpe < 1 ka asli kharcha discipline hai, math nahi.** 37% win pe 5-8 lagataar loss
+   normal hain — wahi "man in the loop" panic-exit ki jad hai.
+4. **Tool bana dena kaam nahi hai — chalana kaam hai.** Teesri baar.
+
+### Train/OOS split — asli chhanni yahi nikli
+
+`real_verdict.py` (real per-trade series pe, split @ 2025-01-01):
+
+| run | FULL Sh / p | train Sh / PF / exp | **OOS Sh / PF / exp / p** |
+|---|---|---|---|
+| chain_zone_longatm | 1.06 / 0.008 | 1.10 / 1.26 / +₹224 | **0.98 / 1.25 / +₹237 / 0.105** |
+| orb_supertrend | 1.12 / 0.006 | 1.43 / 1.61 / +₹317 | **0.37 / 1.12 / +₹80 / 0.321** |
+| mid_orb_nifty | 0.81 / 0.034 | 1.08 / 1.34 / +₹249 | **0.22 / 1.06 / +₹47 / 0.387** |
+| dvert / backspread / straddle / strangle | <0 / ≥0.75 | sab negative | sab negative |
+
+**Sirf `chain_zone_longatm` (04.03.02) OOS me tikta hai** — expectancy train ke +₹224 se
+OOS me **+₹237 badh** gayi, PF 1.26→1.25 sthir. Baaki do OOS me girte hain:
+orb_supertrend +₹317→**+₹80** (PF 1.61→1.12), mid_orb +₹249→**+₹47** (PF 1.34→1.06) —
+ye decay hai, edge nahi.
+
+**Meri apni galti (isi run me):** script ka auto-verdict teenon ko "PASS" bol raha tha,
+kyunki gate sirf `paisa>0 + p<0.05 + OOS PF>1` dekh raha tha. **Bahut dhila tha** — PF 1.06
+aur ₹47/trade shor hai, edge nahi. **Gate me OOS expectancy ka floor bhi hona chahiye**,
+warna decay bhi "PASS" ho jaata hai.
+
+**Note:** FULL Sharpe do jagah alag hai (`bs_vs_reallake` 0.88 vs `real_verdict` 1.06) —
+annualisation alag hai (`252·n/_DAYS` vs `n/yrs`). **Ordering nahi badalti**; jahan Sharpe
+quote karo, source likho.
+
+### Kiya gaya
+`straddle_v1`, `dvert_v1`, `backspread_v1` **band** (`long_strangle_orb` kabhi deploy nahi
+hua). `chainzone_v1` pehle hi band. **Koi live real-money strategy chalu nahi.**
+`orb_v1`/`orbst_v1`/`chainzone_v1` ka **poora real-lake re-backtest (train/OOS ke saath)
+pending** — ye sirf reprice hai, jisme BS run ki exit-timing wahi rakhi gayi hai.
+`orb_overnight_v1` aur `banknifty_v1` **abhi bhi unknown** (NIFTY lake tool ke dayre se bahar).

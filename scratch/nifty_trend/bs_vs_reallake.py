@@ -74,6 +74,7 @@ def reprice(slug):
     bs_sh = c["metrics"].get("sharpe")
     bs_net = real_net = 0.0
     rr = []
+    dd = []
     for t in c["all_trades"]:
         if t.get("pnl") is None:
             continue
@@ -102,11 +103,13 @@ def reprice(slug):
         real_net += gross - fee - slip
         bs_net += float(t["pnl"])
         rr.append(gross - fee - slip)
+        dd.append(str(t["entry_dt"])[:10])     # train/OOS split ke liye
     r = np.array(rr)
     sh = r.mean() / r.std() * np.sqrt(252 * len(r) / max(1, _DAYS)) if len(r) and r.std() else 0.0
     return dict(slug=slug, struct=struct, cov=len(rr), tot=len(c["all_trades"]),
                 bs_sh=bs_sh, bs_net=bs_net, real_net=real_net, real_sh=sh,
-                wr=(r > 0).mean() * 100 if len(r) else 0.0)
+                wr=(r > 0).mean() * 100 if len(r) else 0.0,
+                trades=r.tolist(), dates=dd)   # per-trade REAL net + entry date
 
 
 DEFAULT = ["mid_orb_nifty", "orb_supertrend", "long_straddle_orb", "debit_vertical_orb",
