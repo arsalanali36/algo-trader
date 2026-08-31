@@ -290,10 +290,10 @@ def run(window_days=None, only=None, do_notify=False):
             elif r["verdict"] == "decayed":
                 why = []
                 if r.get("p", 1) < P_DEAD:
-                    why.append("expectancy Rs%s/lot vs backtest Rs%s (p=%.3f)"
+                    why.append("expectancy Rs%s/unit vs backtest Rs%s (p=%.3f)"
                                % (r["live_mean"], r["bt_mean"], r["p"]))
                 if r.get("dd_breach"):
-                    why.append("drawdown Rs%s > bad-luck limit Rs%s" % (r["live_dd"], r["bt_dd"]))
+                    why.append("drawdown Rs%s/unit > bad-luck limit Rs%s" % (r["live_dd"], r["bt_dd"]))
                 notify.error("%s - %s ke %d trades backtest se alag chal rahe hain: %s. "
                              "Review karo (system ne band NAHI kiya)."
                              % (r["id"], r["name"], r["n"], "; ".join(why)),
