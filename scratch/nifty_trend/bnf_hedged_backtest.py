@@ -119,22 +119,25 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
 
 def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5,
                    max_hold_days=3, exp_squareoff_days=2, slip_mult=1.0,
-                   real_wings=False):
+                   real_wings=False, strict_skip=False):
     """HEDGED strangle held ACROSS days (positional). Enter first bar>=09:20; hold
     forward across trading days until basket target/SL, OR (expiry-exp_squareoff_days)
     squareoff, OR max_hold_days. Wings BS-priced with per-bar T (days decay). Downside
     is wing-capped every leg. No re-entry while a position is open."""
     bs.SLIP_MULT = slip_mult
-    if real_wings and abs(off + wing) > 10:
+    _WIN = int(g.get("WIN") or 10)
+    if real_wings and abs(off + wing) > _WIN:
         raise ValueError(
-            "real_wings needs the wing strike inside the lake's -10..+10 offsets, but "
+            "real_wings needs the wing strike inside the lake's -%d..+%d offsets, but "
             "off+wing=%d. base._px() would silently return INTRINSIC value there and the "
             "run would look real while being fiction. Use wing<=%d, or move `off` in."
-            % (off + wing, 10 - off))
+            % (_WIN, _WIN, off + wing, _WIN - off))
 
     def _wing_px(i, ot, K, S, T, sigma):
         """REAL traded premium from the lake, or Black-Scholes (legacy)."""
         return base._px(g, i, ot, K) if real_wings else _bs_wing(S, K, T, sigma, ot)
+
+    _skipped = [0]     # trades dropped because the lake cannot price them honestly
 
     DAY, TT, DT, SPOT = g["DAY"], g["TT"], g["DT"], g["SPOT"]
     n = len(DT)
@@ -158,6 +161,19 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
         atmk = round(SPOT[e] / STEP) * STEP
         kc_s, kp_s = atmk + off * STEP, atmk - off * STEP
         kc_w, kp_w = atmk + (off + wing) * STEP, atmk - (off + wing) * STEP
+        if strict_skip:
+            # TRAP #198: price honestly or not at all. If any leg's FIXED strike would
+            # leave the lake's ATM-relative window during the hold, base._px would
+            # substitute intrinsic (0 for an OTM leg) and hand back a fictional trade.
+            # Drop it and count it instead — same contract as strangle_roll's
+            # "entry_strike_missing" skip, which is why 02.17 is trustworthy.
+            _fut = [dd for dd in order_days if dd >= d0][:max_hold_days + 1]
+            _hi = last_bar[_fut[-1]] if _fut else e
+            _span = g["ATMK"][e:_hi + 1]
+            _legs = [kc_s, kp_s] + ([kc_w, kp_w] if real_wings else [])
+            if any(bool((np.abs(np.round((K - _span) / STEP)) > _WIN).any()) for K in _legs):
+                _skipped[0] += 1
+                continue
         sce, spe = base._px(g, e, "CE", kc_s), base._px(g, e, "PE", kp_s)
         if sce <= 0 or spe <= 0:
             continue
@@ -210,7 +226,7 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
         # only the legs actually priced FROM the lake can be corrupted by it: shorts
         # always, wings only when real_wings=True (BS prices any strike).
         _lake_legs = [kc_s, kp_s] + ([kc_w, kp_w] if real_wings else [])
-        _oob = any(bool((np.abs(np.round((K - _atm_span) / STEP)) > 10).any())
+        _oob = any(bool((np.abs(np.round((K - _atm_span) / STEP)) > _WIN).any())
                    for K in _lake_legs)
         rows.append(dict(oob=_oob,
                          day=d0, exit_day=DAY[x], hold=(pd.Timestamp(DT[x]) - when).days,
@@ -218,7 +234,9 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
                          entry_credit=entry_credit, qty=qty, maxloss_cap=cap,
                          spot0=float(S0), atm=float(atmk)))
         hold_until_day = DAY[x]
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out.attrs["skipped_unpriceable"] = _skipped[0]
+    return out
 
 
 def report(df, label):

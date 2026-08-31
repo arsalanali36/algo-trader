@@ -12,7 +12,8 @@ User Q: 9:20 pe BankNifty par 1-sigma distance pe dono (CE+PE) SELL, 2:55 tak ho
   |offset|>10 => intrinsic floor (tracked + reported as fallback%).
 - Costs: real date-aware Zerodha charges (bs.calc_charges) + DOM-measured slippage (bs.slip_cost_leg).
 """
-import os, math, datetime as dt
+import os
+import re, math, datetime as dt
 import numpy as np, pandas as pd
 import bs_option as bs
 import expiry_calendar as xcal
@@ -115,7 +116,19 @@ def load_grid(include_live=True):
     """per-bar CE/PE premium grid across offsets -10..10 + ATMK/SPOT/DT/DAY/TT.
     include_live=True seamlessly appends the live collector's recent days (past the
     bulk lake) so the backtest reaches ~yesterday. Set False for bulk-only reproducibility."""
-    offs = list(range(-10, 11))
+    # TRAP #198: the window is whatever the lake actually holds on disk, NOT a
+    # hardcoded +-10. After optchain_dl.py --off-range 20 this picks the wider set up
+    # automatically, so a fixed strike has room to drift without falling out.
+    _have = set()
+    for _f in os.listdir(LAKE) if os.path.isdir(LAKE) else []:
+        _m = re.match(r"^CE_ATM(?:(p|m)(\d+))?\.csv$", _f)
+        if _m:
+            _have.add(0 if not _m.group(1)
+                      else (int(_m.group(2)) if _m.group(1) == "p" else -int(_m.group(2))))
+    _win = 0
+    while (_win + 1) in _have and -(_win + 1) in _have:
+        _win += 1                      # contiguous window only — koi gap nahi
+    offs = list(range(-_win, _win + 1)) if _win else list(range(-10, 11))
     base = None
     for side in ("CE", "PE"):
         for off in offs:
@@ -157,7 +170,7 @@ def load_grid(include_live=True):
     return dict(CE=CE.astype(float), PE=PE.astype(float),
                 ATMK=base.ATMK.values.astype(float), SPOT=base.SPOT.values.astype(float),
                 DT=base.Datetime.values, DAY=base.Datetime.dt.date.values,
-                TT=base.Datetime.dt.time.values, offs=offs)
+                TT=base.Datetime.dt.time.values, offs=offs, WIN=max(abs(o) for o in offs))
 
 
 _FALLBACK = [0, 0]  # [out-of-window reads, total reads]
@@ -182,8 +195,9 @@ def oob_report(reset=True):
 def _px(g, i, side, K):
     off = int(round((K - g["ATMK"][i]) / STEP))
     _FALLBACK[1] += 1
-    if -10 <= off <= 10:
-        v = (g["CE"] if side == "CE" else g["PE"])[i, off + 10]
+    win = g.get("WIN") or ((len(g["CE"][0]) - 1) // 2)
+    if -win <= off <= win:
+        v = (g["CE"] if side == "CE" else g["PE"])[i, off + win]
         if v and not np.isnan(v) and v > 0:
             return float(v)
     # ── TRAP #198 ──────────────────────────────────────────────────────────────
@@ -195,16 +209,16 @@ def _px(g, i, side, K):
     # 88% win rate vs 48% for clean trades. Silence was the whole problem, so the
     # miss is now counted separately and, under STRICT, refuses to invent a price.
     _FALLBACK[0] += 1
-    if -10 <= off <= 10:
+    if -win <= off <= win:
         _OOB[1] += 1                       # in window, but the lake cell is empty
     else:
         _OOB[0] += 1                       # strike is outside the lake entirely
         if STRICT:
             raise LakeCoverageError(
                 "strike %s is %d strikes from ATM %s at bar %d — outside the lake's "
-                "-10..+10 window. Refusing to substitute intrinsic value (TRAP #198). "
+                "-%d..+%d window. Refusing to substitute intrinsic value (TRAP #198). "
                 "Widen the lake (optchain_dl.py --off-range) or move the strike in."
-                % (K, off, g["ATMK"][i], i))
+                % (K, off, g["ATMK"][i], i, win, win))
     S = g["SPOT"][i]
     return max(0.0, (S - K) if side == "CE" else (K - S))  # intrinsic-ok: kept for the ~50 legacy call sites, but no longer silent — counted in _OOB/oob_report() and raises under STRICT; the publish path asserts coverage (_assert_lake_coverage, TRAP #198)
 
