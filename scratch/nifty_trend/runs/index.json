@@ -382,7 +382,7 @@
  {
   "slug": "chain_zone_longatm",
   "design": "chain_zone",
-  "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+  "title": "[SUPERSEDED - BS] 04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
   "tf": "5m",
   "params": {
    "touch_tol": 5.0,
@@ -414,8 +414,8 @@
   "rms_full_sharpe": 0.61,
   "p_value": 0.0,
   "created": "2026-07-11 01:41",
-  "deploy_key": "chainzone_v1",
-  "deployed": "chainzone_v1",
+  "deploy_key": null,
+  "deployed": null,
   "real_cost": {
    "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
    "date": "2026-07-14",
@@ -1938,6 +1938,56 @@
   "real_cost": {
    "method": "REAL OptChainLake premium (shorts) + BS wings + date-aware Zerodha charges + DOM slip, 5 lots",
    "note": "Positional max_hold=1 vs intraday: +44% net, less tax. Rs4k SL overnight-gap breach ~3x/5yr (worst -Rs10.4k, wing-BOUNDED). Sharpe>4 = seller red-flag; forward-paper."
+  }
+ },
+ {
+  "slug": "chain_zone_longatm_real",
+  "design": "chain_zone",
+  "title": "04.03.02 - Ars chain Directional BUY (long ATM) - REAL PREMIUM",
+  "tf": "5m",
+  "params": {
+   "touch_tol": 5.0,
+   "zone_age": 2,
+   "max_cs": 40.0,
+   "hawa": false,
+   "chain_lookback": 20,
+   "atr_sl": 2.5,
+   "rr": 1.5
+  },
+  "exit": "stop_only",
+  "instrument": "NIFTY",
+  "lot_size": 65,
+  "window": [
+   "2021-07-02",
+   "2026-07-09"
+  ],
+  "days": 823,
+  "significant": true,
+  "bs_full": {
+   "sharpe": 1.077,
+   "net_pct": 46.961,
+   "maxdd": -9.372,
+   "win_rate": 36.735,
+   "trades": 1029,
+   "profit_factor": 1.257
+  },
+  "combos": {
+   "train": {
+    "sharpe": 1.101,
+    "net_pct": 32.821
+   },
+   "oos": {
+    "sharpe": 1.029,
+    "net_pct": 14.14
+   }
+  },
+  "p_value": 0.007,
+  "created": "2026-08-31 16:00",
+  "deploy_key": "chainzone_v1",
+  "deployed": "chainzone_v1",
+  "real_cost": {
+   "method": "REAL OptChainLake premium + date-aware Zerodha charges + DOM slip, 1 lot",
+   "note": "Replaces the Black-Scholes run (chain_zone_longatm, Sharpe 1.95) which overstated a BUYER's edge - BS understates the theta a buyer bleeds (TRAP #199). Same signal, same ORIGINAL params, same spot-based exits; only the option pricing is real. The lake starts 2021-07, so the 2018-2021 part of the original window is not covered. A 192-config param sweep was run and REJECTED: the train winner was Rs7,778 WORSE out-of-sample and train-vs-OOS correlation was only 0.234 (TRAP #200) - params are deliberately left at their original values."
   }
  }
 ]

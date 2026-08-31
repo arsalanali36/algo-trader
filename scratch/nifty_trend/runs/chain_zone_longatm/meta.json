@@ -1,7 +1,7 @@
 {
  "slug": "chain_zone_longatm",
  "design": "chain_zone",
- "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+ "title": "[SUPERSEDED - BS] 04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
  "tf": "5m",
  "params": {
   "touch_tol": 5.0,
@@ -51,6 +51,9 @@
    "sharpe": 1.959,
    "net_pct": 25.7,
    "maxdd": -2.61
-  }
- }
+  },
+  "note": "SUPERSEDED by runs/chain_zone_longatm_real. This run's P&L is Black-Scholes premium; BS understates the theta an option BUYER bleeds, so its Sharpe 1.95 is not achievable. On real premium the same trades give Sharpe 1.08 / PF 1.26 (TRAP #199). Kept for the record only."
+ },
+ "deployed": null,
+ "deploy_key": null
 }

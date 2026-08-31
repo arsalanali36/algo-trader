@@ -724,11 +724,12 @@
    "aliases": [
     "chainzone_v1",
     "chain_zone_longatm",
-    "01.01"
+    "01.01",
+    "chain_zone_longatm_real"
    ],
-   "slug": "chain_zone_longatm",
+   "slug": "chain_zone_longatm_real",
    "live_file": "strategies/live/04_chainzone_trader.py",
-   "status": "live",
+   "status": "paper",
    "role": "child",
    "parent": "04.03",
    "transport": "python",
@@ -736,7 +737,21 @@
    "instrument": "NIFTY",
    "hold": "Intraday",
    "structure": "Long ATM (BUY on signal direction)",
-   "desc": "The WINNING structure of the Auto-Rev-Chain idea: on each chain-zone signal, BUY the directional ATM option (long gamma keeps big winners uncapped). Same signal family as 04.03/04.04 but the OPPOSITE structure - they SELL (short gamma caps winners so both backtest NEGATIVE), this BUYS. Backtest (chain_zone_longatm, real premium + date-aware charges + DOM slip, 2018-2026, 1806 trades): BS Sharpe 1.95 / net +69% / maxDD -3.1% / PF 1.49; real-cost Sharpe 1.87, train 1.83 ~ OOS 1.96 (no decay), p=0.000. BUY = margin light (pay premium, no SPAN/cash-margin) so it scales and sidesteps the cash-margin block that stops the SELL sellers. Uses the validated single-source chain_zone.py signal via 04_chainzone_trader.py. Re-homed from 01.01 (Chain-Zone research family); the credit/naked/positional structure-variants stay there for comparison. PAPER - forward-validate before real money (Rule 10)."
+   "desc": "The BUY side of the Auto-Rev-Chain idea: on each chain-zone signal, BUY the directional ATM option (long gamma keeps winners uncapped). Same signal family as 04.03/04.04 but the OPPOSITE structure - they SELL. *** NUMBERS CORRECTED 2026-08-31 (TRAP #199): the old 'Sharpe 1.95 / +69%' was BLACK-SCHOLES premium, not real, and BS flatters an option BUYER because it understates the theta a buyer bleeds. *** REAL premium (runs/chain_zone_longatm_real, OptChainLake + date-aware Zerodha charges + DOM slip, 2021-07..2026-07, 1029 trades, 1 lot): Sharpe 1.08 | net +Rs2,34,804 | PF 1.26 | win 36.7% | maxDD -Rs46,858 | p=0.007. Train Sharpe 1.10 -> OOS Sharpe 1.03 (expectancy Rs224 -> Rs237, holds up). Low win rate is normal for buying; RR 2.17 carries it. Execution cost is small: one NIFTY ATM leg round-trips for ~Rs11 vs Rs228 expectancy (5%). Sizing on its own MC worst-5% DD (Rs79,761/lot): Rs5L -> 1 lot (8.0% CAGR), Rs20L -> 5-8 lots (10.9% CAGR, -10.8% DD); the binding constraint is DRAWDOWN, not margin. PARAMS ARE ORIGINAL AND MUST STAY: a 192-config signal sweep was run and rejected - the train winner was Rs7,778 WORSE out-of-sample, train-vs-OOS correlation 0.234 (TRAP #200, DO-NOT-REDO). STOPPED 2026-08-31 (was live on the BS number); re-deploy only after a paper forward-validation.",
+   "evidence": {
+    "pricing": "REAL OptChainLake premium (BS rejected, TRAP #199)",
+    "run": "runs/chain_zone_longatm_real",
+    "sharpe": 1.077,
+    "net_abs": 234804,
+    "profit_factor": 1.257,
+    "win_rate": 36.7,
+    "maxdd_abs": 46858,
+    "p_value": 0.007,
+    "train_sharpe": 1.101,
+    "oos_sharpe": 1.029,
+    "verdict": "edge real (p<0.05) and holds OOS; Sharpe ~1, RR 2.17",
+    "superseded_run": "chain_zone_longatm (Black-Scholes, Sharpe 1.95 - NOT evidence)"
+   }
   },
   "02.17": {
    "name": "Weekly Iron-Fly (day-after-expiry)",
