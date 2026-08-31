@@ -93,12 +93,19 @@ function tmTog(grpId, k) {
   S.en[k] = !S.en[k]; tmRender(grpId);
 }
 
-function _tmRow(grpId, key, name, note, pre, slVal, tgVal, slK, tgK, derived) {
+function _tmRow(grpId, key, name, note, pre, slVal, tgVal, slK, tgK, derived, rightBorder) {
   const S = window._tmState[grpId];
   const on = !!S.en[key];
   const dis = derived ? ' readonly' : '';
   const bg = derived ? '#0b0f15' : '#0d1117';
-  return `<div style="display:grid;grid-template-columns:34px 1fr 104px 104px;gap:9px;align-items:center;padding:8px 10px;border-bottom:1px solid #21262d;opacity:${on ? 1 : .42}">
+  // 2-column layout: aadhi width me hone se SL/Target boxes label ke paas aa
+  // jaate hain (full-width rows me wo screen ke door kone me chale jaate the).
+  // max-width zaroori hai: bina iske label cell (1fr) poori chaudai kha jaata hai
+  // aur wide screen pe SL/Target boxes text se ~500px door chale jaate hain (yahi
+  // asli shikayat thi). Cap se dono column left-packed rehte hain aur inputs
+  // aapas me aligned bhi.
+  const bd = rightBorder ? 'border-right:1px solid #21262d;' : '';
+  return `<div style="display:grid;grid-template-columns:30px minmax(0,1fr) 88px 88px;gap:7px;align-items:center;max-width:430px;padding:8px 10px;border-bottom:1px solid #21262d;${bd}opacity:${on ? 1 : .42}">
     <button onclick="tmTog('${grpId}','${key}')" title="on/off"
       style="width:32px;height:18px;border:0;border-radius:9px;background:${on ? '#1f6feb55' : '#30363d'};position:relative;cursor:pointer;padding:0">
       <span style="position:absolute;top:2px;left:${on ? 16 : 2}px;width:14px;height:14px;border-radius:50%;background:${on ? '#58a6ff' : '#8b949e'};transition:left .15s"></span></button>
@@ -159,10 +166,12 @@ function tmRender(grpId) {
       <span id="tm-note-${grpId}" style="font-size:11px;color:#8b949e"></span>
     </div>
 
-    ${_tmRow(grpId, 'rs', '₹ Combined premium', 'poore basket ka MTM', '₹', S.rs_sl, S.rs_tg, 'rs_sl', 'rs_tg', false)}
-    ${_tmRow(grpId, 'pp', 'Combined premium — points', '₹ ÷ qty (' + q + '), auto', 'pt', ppSl, ppTg, 'x', 'x', true)}
-    ${_tmRow(grpId, 'ip', 'Index points', 'entry ke index level se ±', 'pt', S.ip_sl, S.ip_tg, 'ip_sl', 'ip_tg', false)}
-    ${_tmRow(grpId, 'il', 'Index price', 'apna level — cross pe exit', '₹', S.il_sl, S.il_tg, 'il_sl', 'il_tg', false)}
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,430px));justify-content:start">
+      ${_tmRow(grpId, 'rs', '₹ Combined premium', 'poore basket ka MTM', '₹', S.rs_sl, S.rs_tg, 'rs_sl', 'rs_tg', false, true)}
+      ${_tmRow(grpId, 'pp', 'Combined premium — points', '₹ ÷ qty (' + q + '), auto', 'pt', ppSl, ppTg, 'x', 'x', true, false)}
+      ${_tmRow(grpId, 'ip', 'Index points', 'entry ke index level se ±', 'pt', S.ip_sl, S.ip_tg, 'ip_sl', 'ip_tg', false, true)}
+      ${_tmRow(grpId, 'il', 'Index price', 'apna level — cross pe exit', '₹', S.il_sl, S.il_tg, 'il_sl', 'il_tg', false, false)}
+    </div>
 
     <div style="padding:8px 11px;border-bottom:1px solid #21262d;font-family:ui-monospace,monospace;font-size:11px">${bridge}</div>
 
