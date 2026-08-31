@@ -15,6 +15,9 @@
   .app-title{font-size:15px;font-weight:700}
   .app-title .sub{color:var(--mut);font-weight:500;font-size:11.5px;margin-left:8px}
   .livechip{background:#0c2a20;color:var(--teal);border:1px solid #124f3a;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .pricechip{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;margin-right:8px;cursor:help}
+  .pricechip.real{background:#0c2a20;color:var(--teal);border:1px solid #124f3a}
+  .pricechip.bad{background:#3a1d05;color:#ffb454;border:1px solid #7a4408}
   .controls{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
   .seg{display:flex;background:var(--panel);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
   .seg .lbl{padding:7px 11px;color:var(--mut);font-size:10.5px;font-weight:700;align-self:center;border-right:1px solid var(--bd);background:var(--bd2);letter-spacing:.4px}
@@ -115,10 +118,9 @@
         <span class="mut" id="navPos" style="font-size:11px;min-width:34px;text-align:center"></span>
         <button class="tchbtn" id="navNext" title="Next strategy (→ arrow key)">→</button>
       </div>
+      <span class="pricechip bad" id="pricechip" style="display:none"></span>
       <span class="livechip" id="livechip">● GENUINE EDGE</span>
     </div>
-
-
     <div id="lotStrip" style="display:none;align-items:center;gap:16px;flex-wrap:wrap;padding:9px 14px;background:var(--panel);border:1px solid var(--bd);border-radius:9px;margin-bottom:12px">
       <span style="font-weight:700;font-size:12px">📦 Lot economics</span>
       <span class="seg" style="align-items:center">
@@ -131,7 +133,8 @@
       <span>Tax <b id="lsTax" class="mut">—</b></span>
       <span>Capital <b id="lsCap" style="color:var(--bench)">—</b></span>
       <span class="mut" id="lsNote" style="font-size:11px"></span>
-    </div>    <div class="controls">
+    </div>
+    <div class="controls">
       <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
         <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
         <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
@@ -216,7 +219,7 @@
   </div>
 </div>
 
-<script src="results_intraday.js"></script>
+<script src="results.js"></script>
 <script>
 const R=window.RESULTS;
 const HAS_PASS=!!(R.meta&&R.meta.passes);   // new 3-pass results.js vs old single-axis
@@ -597,10 +600,27 @@ function renderAll(){const m=C().metrics,s=C().significance;
   if(_tEl&&R.meta&&R.meta.design){_tEl.textContent='📈 '+R.meta.design;document.title=R.meta.design+' — Backtest';
     if(_sEl)_sEl.textContent='NSE spot · '+(R.meta.tf||'')+' · long+short · 3:15 exit · max 2/day · 1x NO leverage';}
   const _lc=document.getElementById('livechip');
+  // ---- DATA-PROVENANCE gate (house rule, 2026-08-31): a Black-Scholes / synthetic
+  // premium run is NOT evidence. Derived from meta so a new run can't forget it.
+  var _pv=(function(){
+    var t=((R.meta&&R.meta.real_cost&&R.meta.real_cost.method)||(R.meta&&R.meta.method)||'').toString();
+    var hasReal=/REAL/i.test(t), hasBS=/(^|[^A-Za-z])BS([^A-Za-z]|$)|black[- ]?scholes/i.test(t);
+    if(!t.trim())        return {ok:false,label:'⚠ NOT PROVEN — pricing source not recorded',
+                                 why:'Is run ki meta me premium ka source likha hi nahi hai. Jab tak REAL lake premium se re-run na ho, ye evidence nahi hai.'};
+    if(hasReal&&hasBS)   return {ok:false,label:'⚠ NOT PROVEN — some legs synthetic (BS)',
+                                 why:'Kuch legs REAL premium ke hain aur kuch Black-Scholes se banaye gaye. Hedge/wing hi tail me bachata hai — wo synthetic ho to defined-risk ka daawa prove nahi hota.'};
+    if(hasReal)          return {ok:true, label:'✔ REAL premium',
+                                 why:'Saare legs asli traded premium (OptChainLake / collector / broker quotes) se. '+t};
+    return {ok:false,label:'⚠ NOT PROVEN — synthetic (BS) premium',
+            why:'Ye P&L Black-Scholes se banaya gaya hai, asli market premium se nahi. Sigma aksar entry pe freeze hota hai — vol expansion, IV crush, skew, spread kuch capture nahi hota. Real lake pe reprice kiye bina ye edge ka proof NAHI hai.'};
+  })();
+  var _pc=document.getElementById('pricechip');
+  if(_pc){_pc.style.display='';_pc.className='pricechip '+(_pv.ok?'real':'bad');_pc.textContent=_pv.label;_pc.title=_pv.why;}
   if(s){
     document.getElementById('infobar').innerHTML=
       `${s.significant?'✅':'⚠️'} <b>${s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s.significant?'passes':'fails'} the significance gate (p=${s.p_value.toFixed(3)} ${s.significant?'&lt;':'≥'} 0.05)${s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
-    if(_lc){_lc.style.display='';_lc.textContent=s.significant?'● GENUINE EDGE':'⚠ NOT SIGNIFICANT';}
+    if(_lc){_lc.style.display='';_lc.textContent=!_pv.ok?'⚠ NOT PROVEN':(s.significant?'● GENUINE EDGE':'⚠ NOT SIGNIFICANT');}
+    if(!_pv.ok){document.getElementById('infobar').innerHTML='⚠️ <b>NOT PROVEN — '+_pv.label.replace(/^⚠ NOT PROVEN — /,'')+'.</b> '+_pv.why+'<br><span class="mut">Significance/Sharpe neeche sirf reference ke liye hain — REAL premium pe reprice kiye bina ye deploy ka aadhaar NAHI hai.</span>';}
   } else {
     // significance test isn't in an uploaded Excel — don't fake a verdict either way
     document.getElementById('infobar').innerHTML=

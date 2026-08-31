@@ -15,6 +15,9 @@
   .app-title{font-size:15px;font-weight:700}
   .app-title .sub{color:var(--mut);font-weight:500;font-size:11.5px;margin-left:8px}
   .livechip{background:#0c2a20;color:var(--teal);border:1px solid #124f3a;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .pricechip{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;margin-right:8px;cursor:help}
+  .pricechip.real{background:#0c2a20;color:var(--teal);border:1px solid #124f3a}
+  .pricechip.bad{background:#3a1d05;color:#ffb454;border:1px solid #7a4408}
   .controls{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
   .seg{display:flex;background:var(--panel);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
   .seg .lbl{padding:7px 11px;color:var(--mut);font-size:10.5px;font-weight:700;align-self:center;border-right:1px solid var(--bd);background:var(--bd2);letter-spacing:.4px}
@@ -115,10 +118,9 @@
         <span class="mut" id="navPos" style="font-size:11px;min-width:34px;text-align:center"></span>
         <button class="tchbtn" id="navNext" title="Next strategy (→ arrow key)">→</button>
       </div>
+      <span class="pricechip bad" id="pricechip" style="display:none"></span>
       <span class="livechip" id="livechip">● GENUINE EDGE</span>
     </div>
-
-
     <div id="lotStrip" style="display:none;align-items:center;gap:16px;flex-wrap:wrap;padding:9px 14px;background:var(--panel);border:1px solid var(--bd);border-radius:9px;margin-bottom:12px">
       <span style="font-weight:700;font-size:12px">📦 Lot economics</span>
       <span class="seg" style="align-items:center">
@@ -131,7 +133,8 @@
       <span>Tax <b id="lsTax" class="mut">—</b></span>
       <span>Capital <b id="lsCap" style="color:var(--bench)">—</b></span>
       <span class="mut" id="lsNote" style="font-size:11px"></span>
-    </div>    <div class="controls">
+    </div>
+    <div class="controls">
       <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
         <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
         <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
@@ -158,6 +161,11 @@
       <div class="panel"><h3>Drawdown <span class="tag">(Worst 5 Periods)</span></h3><hr class="dash"><div id="ddPeriods"></div></div>
       <div class="panel"><h3>Underwater Plot</h3><hr class="dash"><div id="underwater"></div></div>
       <div class="panel"><h3>Monthly Returns Heatmap</h3><hr class="dash"><div id="monthly" style="overflow-x:auto"></div></div>
+      <div class="panel"><h3>P&amp;L Distribution <span class="tag">— per-trade result spread (bell curve) · 1 lot · active pass/period</span>
+          <span style="float:right"><button class="tchbtn" id="distRs">₹</button> <button class="tchbtn" id="distPt">Points</button>
+            <button class="tchbtn" id="distView" style="margin-left:12px" title="Chart ⇄ Table — same data as a table">📋 Table</button></span></h3>
+        <hr class="dash"><div id="dist"></div>
+        <div class="mut" id="distStats" style="font-size:11.5px;margin-top:8px"></div></div>
     </div>
     <div class="side">
       <div class="panel"><div class="sh">Performance</div><div id="perf"></div></div>
@@ -166,12 +174,6 @@
       <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy, Terms &amp; FAQ</div><div id="philo"></div></div>
     </div>
   </div>
-
-  <div class="panel"><h3>P&amp;L Distribution <span class="tag">— per-trade result spread (bell curve) · 1 lot · active pass/period</span>
-      <span style="float:right"><button class="tchbtn" id="distRs">₹</button> <button class="tchbtn" id="distPt">Points</button>
-        <button class="tchbtn" id="distView" style="margin-left:12px" title="Chart ⇄ Table — same data as a table">📋 Table</button></span></h3>
-    <hr class="dash"><div id="dist"></div>
-    <div class="mut" id="distStats" style="font-size:11.5px;margin-top:8px"></div></div>
 
   <div class="panel"><h3>Trades <span class="tag">— search · toggle columns · click a month in the heatmap above to filter · 📈 full-screen chart</span></h3>
     <hr class="dash">
@@ -394,10 +396,14 @@ async function dnaReveal(ev){
   const want=localStorage.getItem('dna_pw_hash')||DNA_DEFAULT_HASH;
   if(await _dnaHash(pw)===want){window._dnaRevealed=true;renderDNA();}else alert('Galat password');
 }
-function renderDNA(){const d=C().dna;const lbl={or_min:'Opening range (min)',orb_k:'Breakout strength (×ATR)',h0:'Entry window start (hr)',h1:'Entry window end (hr)',atr_sl:'Stop (×ATR)',rr:'Reward:Risk',exit:'Exit style'};
-  const eye=document.getElementById('dnaEye'); if(eye)eye.textContent=window._dnaRevealed?'🙈':'👁️';
-  let h='';for(const k in d){const v=window._dnaRevealed?d[k]:'••••';h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${v}</span></div>`;}
-  if(!window._dnaRevealed)h+='<div class="mut" style="font-size:11px;margin-top:6px">🔒 hidden — 👁️ se password daalo (Shift+click = badlo)</div>';
+function renderDNA(){const d=C().dna||{};const lbl={or_min:'Opening range (min)',orb_k:'Breakout strength (×ATR)',h0:'Entry window start (hr)',h1:'Entry window end (hr)',atr_sl:'Stop (×ATR)',rr:'Reward:Risk',exit:'Exit style'};
+  const panel=document.getElementById('dna').closest('.panel');
+  if(!Object.keys(d).length){if(panel)panel.style.display='none';return}if(panel)panel.style.display='';
+  // dna_open (uploaded Excel = user's own data) shows params directly, no password gate
+  const dnaOpen=!!(R.meta&&R.meta.dna_open),open=window._dnaRevealed||dnaOpen;
+  const eye=document.getElementById('dnaEye'); if(eye){eye.style.display=dnaOpen?'none':'';eye.textContent=open?'🙈':'👁️';}
+  let h='';for(const k in d){const v=open?d[k]:'••••';h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${v}</span></div>`;}
+  if(!open)h+='<div class="mut" style="font-size:11px;margin-top:6px">🔒 hidden — 👁️ se password daalo (Shift+click = badlo)</div>';
   document.getElementById('dna').innerHTML=h}
 function renderInfo(){const M=R.meta||{};
   const instr=(M.instrument||'NIFTY 50')+(HAS_PASS?' → ATM CE/PE options':' (index spot)');
@@ -407,7 +413,7 @@ function renderInfo(){const M=R.meta||{};
   ['Leverage','NONE (1x)'],['Rules','3:15 exit · max 2/day · no overnight'],
   ['Data window',R.meta.window[0]+' → '+R.meta.window[1]],['MC scenarios','1,000']];
   document.getElementById('info').innerHTML=rows.map(r=>`<div class="mrow"><span class="k">${r[0]}</span><span class="v" style="font-weight:600">${r[1]}</span></div>`).join('')}
-function renderMC(){const c=C().mc;if(!c){document.getElementById('mcfan').innerHTML='<p class="mut">n/a</p>';document.getElementById('mctbl').innerHTML='';return}
+function renderMC(){const c=C().mc;const _p=document.getElementById('mcfan').closest('.panel');if(!c){if(_p)_p.style.display='none';return}if(_p)_p.style.display='';
   const all=[].concat(...c.paths,c.orig_path),ymin=Math.min(...all),ymax=Math.max(...all);
   let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,lakh);
   for(const p of c.paths)svg+=line(p,'#4f78ff2e',0.7,ymin,ymax);
@@ -419,7 +425,7 @@ function renderMC(){const c=C().mc;if(!c){document.getElementById('mcfan').inner
     h+=`<tr><td>${lbl}</td><td style="color:#f0c000;font-weight:700">${fmtp(v[0],suf)}</td>
       <td class="neg">${fmtp(v[1],suf)}</td><td class="pos">${fmtp(v[2],suf)}</td><td class="mut">${fmtp(v[3],suf)}</td></tr>`}
   document.getElementById('mctbl').innerHTML=h}
-function renderSig(){const s=C().significance,ok=s.significant;
+function renderSig(){const s=C().significance;const _p=document.getElementById('sig').closest('.panel');if(!s){if(_p)_p.style.display='none';return}if(_p)_p.style.display='';const ok=s.significant;
   document.getElementById('sig').innerHTML=`
     <div class="vbox"><div class="t">Verdict</div><div class="b ${ok?'pos':'neg'}">${ok?'✅ SIGNIFICANT':'⚠️ NOT SIGNIFICANT'}</div></div>
     <div class="vbox"><div class="t">p-value</div><div class="b mono">${s.p_value.toFixed(3)}</div></div>
@@ -446,18 +452,18 @@ const TCOLS=[
   {k:'in',label:'In',get:t=>t.entry_dt.slice(11),raw:t=>t.entry_dt},
   {k:'out',label:'Out',get:t=>t.exit_dt.slice(11),raw:t=>t.exit_dt},
   {k:'dur',label:'Dur',off:true,get:t=>durStr(t.bars),raw:t=>t.bars},
-  {k:'entry',label:'Entry (spot)',get:t=>t.entry.toFixed(1),raw:t=>t.entry},
-  {k:'exit',label:'Exit (spot)',get:t=>t.exit.toFixed(1),raw:t=>t.exit},
+  {k:'entry',label:'Entry (spot)',get:t=>t.entry!=null?t.entry.toFixed(1):'<span class="mut">—</span>',raw:t=>t.entry||0},
+  {k:'exit',label:'Exit (spot)',get:t=>t.exit!=null?t.exit.toFixed(1):'<span class="mut">—</span>',raw:t=>t.exit||0},
   {k:'strike',label:'Strike',off:true,get:t=>t.strike!=null?`${t.strike} ${t.opt_type||''}`:'<span class="mut">—</span>',raw:t=>t.strike||0},
   {k:'entry_prem',label:'Entry Prem ₹',off:true,get:t=>t.entry_prem!=null?t.entry_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.entry_prem||0},
   {k:'exit_prem',label:'Exit Prem ₹',off:true,get:t=>t.exit_prem!=null?t.exit_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.exit_prem||0},
   {k:'prem_pts',label:'Prem Pts',get:t=>{if(t.entry_prem==null)return'<span class="mut">—</span>';const p=t.exit_prem-t.entry_prem;return`<span class="${p>=0?'pos':'neg'}">${p>=0?'+':''}${p.toFixed(1)}</span>`},raw:t=>t.entry_prem!=null?(t.exit_prem-t.entry_prem):0},
   {k:'qty',label:'Qty',off:true,get:t=>(t.qty||0).toFixed(0),raw:t=>t.qty||0},
-  {k:'points',label:'Index Pts',get:t=>`<span class="${t.points>=0?'pos':'neg'}">${t.points>=0?'+':''}${t.points.toFixed(0)}</span>`,raw:t=>t.points},
-  {k:'gross',label:'Gross ₹',off:true,get:t=>`<span class="${t.gross>=0?'pos':'neg'}">${t.gross>=0?'+':''}${inr(t.gross)}</span>`,raw:t=>t.gross},
+  {k:'points',label:'Index Pts',get:t=>t.points!=null?`<span class="${t.points>=0?'pos':'neg'}">${t.points>=0?'+':''}${t.points.toFixed(0)}</span>`:'<span class="mut">—</span>',raw:t=>t.points||0},
+  {k:'gross',label:'Gross ₹',off:true,get:t=>t.gross!=null?`<span class="${t.gross>=0?'pos':'neg'}">${t.gross>=0?'+':''}${inr(t.gross)}</span>`:'<span class="mut">—</span>',raw:t=>t.gross||0},
   {k:'fee',label:'Tax ₹',off:true,get:t=>`<span class="mut">-${inr(Math.abs(t.fee||0))}</span>`,raw:t=>t.fee},
   {k:'pnl',label:'Net ₹',get:t=>`<span class="${t.pnl>=0?'pos':'neg'}">${t.pnl>=0?'+':''}${inr(t.pnl)}</span>`,raw:t=>t.pnl},
-  {k:'ret',label:'% Move',get:t=>{const r=t.points/t.entry*100;return`<span class="${r>=0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}%</span>`},raw:t=>t.points/t.entry},
+  {k:'ret',label:'% Move',get:t=>{if(!t.entry)return'<span class="mut">—</span>';const r=t.points/t.entry*100;return`<span class="${r>=0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}%</span>`},raw:t=>t.entry?t.points/t.entry:0},
   {k:'reason',label:'Exit Reason',l:true,get:t=>`<span class="mut">${t.reason}</span>`,raw:t=>t.reason},
 ];
 let colVis=JSON.parse(localStorage.getItem('orb_tcols2')||'null')||{};
@@ -505,7 +511,7 @@ function renderTradeTable(){const tr=tRows(),vis=TCOLS.filter(c=>colVis[c.k]),tb
   tr.forEach(t=>{const mo=t.entry_dt.slice(0,7);
     if(byMonth&&curM!==null&&mo!==curM){h+=subRow(monthName(curM),mS,'msub');mS={n:0,gross:0,fee:0,pnl:0,pts:0,prempts:0};}
     const pp=t.entry_prem!=null?(t.exit_prem-t.entry_prem):0;
-    curM=mo; mS.n++;mS.gross+=t.gross;mS.fee+=t.fee;mS.pnl+=t.pnl;mS.pts+=t.points;mS.prempts+=pp; G.n++;G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;G.pts+=t.points;G.prempts+=pp;
+    curM=mo; mS.n++;mS.gross+=t.gross||0;mS.fee+=t.fee||0;mS.pnl+=t.pnl||0;mS.pts+=t.points||0;mS.prempts+=pp; G.n++;G.gross+=t.gross||0;G.fee+=t.fee||0;G.pnl+=t.pnl||0;G.pts+=t.points||0;G.prempts+=pp;
     h+='<tr>'+vis.map(c=>`<td class="${c.l?'l':''}">${c.get(t)}</td>`).join('')+`<td><button class="chbtn" data-i="${t._i}" title="Full-screen chart">📈</button></td></tr>`;});
   if(byMonth&&curM!==null)h+=subRow(monthName(curM),mS,'msub');
   h+=subRow('GRAND TOTAL',G,'grand');
@@ -593,8 +599,34 @@ function renderAll(){const m=C().metrics,s=C().significance;
   const _tEl=document.getElementById('appTitleTxt'),_sEl=document.getElementById('appTitleSub');
   if(_tEl&&R.meta&&R.meta.design){_tEl.textContent='📈 '+R.meta.design;document.title=R.meta.design+' — Backtest';
     if(_sEl)_sEl.textContent='NSE spot · '+(R.meta.tf||'')+' · long+short · 3:15 exit · max 2/day · 1x NO leverage';}
-  document.getElementById('infobar').innerHTML=
-    `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+  const _lc=document.getElementById('livechip');
+  // ---- DATA-PROVENANCE gate (house rule, 2026-08-31): a Black-Scholes / synthetic
+  // premium run is NOT evidence. Derived from meta so a new run can't forget it.
+  var _pv=(function(){
+    var t=((R.meta&&R.meta.real_cost&&R.meta.real_cost.method)||(R.meta&&R.meta.method)||'').toString();
+    var hasReal=/REAL/i.test(t), hasBS=/(^|[^A-Za-z])BS([^A-Za-z]|$)|black[- ]?scholes/i.test(t);
+    if(!t.trim())        return {ok:false,label:'⚠ NOT PROVEN — pricing source not recorded',
+                                 why:'Is run ki meta me premium ka source likha hi nahi hai. Jab tak REAL lake premium se re-run na ho, ye evidence nahi hai.'};
+    if(hasReal&&hasBS)   return {ok:false,label:'⚠ NOT PROVEN — some legs synthetic (BS)',
+                                 why:'Kuch legs REAL premium ke hain aur kuch Black-Scholes se banaye gaye. Hedge/wing hi tail me bachata hai — wo synthetic ho to defined-risk ka daawa prove nahi hota.'};
+    if(hasReal)          return {ok:true, label:'✔ REAL premium',
+                                 why:'Saare legs asli traded premium (OptChainLake / collector / broker quotes) se. '+t};
+    return {ok:false,label:'⚠ NOT PROVEN — synthetic (BS) premium',
+            why:'Ye P&L Black-Scholes se banaya gaya hai, asli market premium se nahi. Sigma aksar entry pe freeze hota hai — vol expansion, IV crush, skew, spread kuch capture nahi hota. Real lake pe reprice kiye bina ye edge ka proof NAHI hai.'};
+  })();
+  var _pc=document.getElementById('pricechip');
+  if(_pc){_pc.style.display='';_pc.className='pricechip '+(_pv.ok?'real':'bad');_pc.textContent=_pv.label;_pc.title=_pv.why;}
+  if(s){
+    document.getElementById('infobar').innerHTML=
+      `${s.significant?'✅':'⚠️'} <b>${s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s.significant?'passes':'fails'} the significance gate (p=${s.p_value.toFixed(3)} ${s.significant?'&lt;':'≥'} 0.05)${s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+    if(_lc){_lc.style.display='';_lc.textContent=!_pv.ok?'⚠ NOT PROVEN':(s.significant?'● GENUINE EDGE':'⚠ NOT SIGNIFICANT');}
+    if(!_pv.ok){document.getElementById('infobar').innerHTML='⚠️ <b>NOT PROVEN — '+_pv.label.replace(/^⚠ NOT PROVEN — /,'')+'.</b> '+_pv.why+'<br><span class="mut">Significance/Sharpe neeche sirf reference ke liye hain — REAL premium pe reprice kiye bina ye deploy ka aadhaar NAHI hai.</span>';}
+  } else {
+    // significance test isn't in an uploaded Excel — don't fake a verdict either way
+    document.getElementById('infobar').innerHTML=
+      `ℹ️ <b>Significance test not in this file</b> — it needs the original signal run; check the original run for the p-value. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+    if(_lc)_lc.style.display='none';
+  }
   if(HAS_PASS){
     const per=perLabel(P);
     const _pl=(R.meta&&R.meta.pass_labels)||{};
@@ -625,6 +657,17 @@ if(HAS_PASS){const seg=document.getElementById('segPass');seg.style.display='';
 // hide the Recent button for older runs that don't have a recent combo (backward-compat)
 (function(){const has=Object.keys(R.combos||{}).some(k=>k.endsWith('|recent')||k==='recent');
   const rb=document.querySelector('#segP button[data-p="recent"]');if(rb&&!has)rb.style.display='none';})();
+// prune toggles to only the combos that actually exist — a partial results.js (e.g. an
+// uploaded Excel carrying just bs|full) must not offer dead PASS/PERIOD views. A full
+// 9-combo run keeps every button (all exist). Segment with <=1 live button hides itself.
+(function(){const keys=Object.keys(R.combos||{});
+  const passOK=p=>keys.some(k=>k===p+'|full'||k===p+'|'+P);
+  const perOK=p=>keys.some(k=>k.endsWith('|'+p))||keys.includes(p);
+  document.querySelectorAll('#segPass button').forEach(b=>{if(!passOK(b.dataset.pass))b.style.display='none';});
+  document.querySelectorAll('#segP button').forEach(b=>{if(!perOK(b.dataset.p))b.style.display='none';});
+  ['segPass','segP'].forEach(id=>{const seg=document.getElementById(id);if(!seg)return;
+    const vis=[...seg.querySelectorAll('button')].filter(b=>b.style.display!=='none');
+    if(vis.length<=1)seg.style.display='none';});})();
 document.querySelectorAll('#segPass button').forEach(b=>b.onclick=()=>{PASS=b.dataset.pass;
   document.querySelectorAll('#segPass button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
 document.querySelectorAll('#segP button').forEach(b=>b.onclick=()=>{P=b.dataset.p;
