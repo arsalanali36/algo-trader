@@ -5338,3 +5338,90 @@ protocol ke liye reuse karo, nateeje ke liye nahi.
 
 **Paanchvi baar:** exit-sweep 4 baar REJECT hua, ab signal-sweep bhi. Is strategy family pe
 optimisation se aaj tak **ek baar bhi** faayda nahi mila.
+
+---
+
+## TRAP #201 — "bura daur" aur "mari hui edge" me farq karne wala alarm (2026-08-31, user-asked)
+
+**Sawaal jisne ye banwaya (user):** *"ye index SIP ki tarah ho gaya na — NIFTY 2 saal se
+zero de raha, par mai panic me nahi nikalta, kyunki yakeen hai. Kya ye hamare system ke
+baare me keh sakte hain? Set-and-forget me daal sakte hain?"*
+
+**Imaandaar jawab tha: abhi nahi — aur ek THOS wajah se.** NIFTY neeche ja sakta hai par
+"band" nahi ho sakta (uske peeche 50 kamane wali companies hain). Hamari strategy
+**chup-chaap kaam karna band kar sakti hai**, aur live me **bura daur aur mari hui edge
+BILKUL ek jaise dikhte hain**. 04.03.02 ne 2023 me ₹11,457 khoye — wo normal tha
+(backtest me bhi aisa saal hai) — par sach me edge marr jaati to *bilkul wahi* dikhta.
+System ke paas ye farq karne ka koi tareeka tha hi nahi. **Yahi wo ek gap tha jo
+set-and-forget ko rok raha tha.**
+
+### `_ops/decay_watch.py` — sample-size-aware bootstrap
+
+Strategy ki **apni** backtest per-trade distribution se **N-trade sample** baar-baar
+nikalo (N = uske live trades ki ginti) → "agar edge zinda hoti, to itne trades me sabse
+bura kaisa dikh sakta tha?" Live us range me = bura daur; neeche = edge badal gayi.
+Sample-size khud adjust hota hai — 10 trades pe bahut bada gap chahiye, 200 pe chhota.
+Doosra check: live DD vs run ka apna **MC worst-5%** DD (bad-luck pe bhi jitna hona
+chahiye tha, usse zyada gira?).
+
+**Chup rehne ke liye jaan-boojh ke:** <30 trades pe **kabhi verdict nahi** ("pata nahi"
+bolta hai), backtest na ho to kuch nahi bolta, aur **kabhi kuch band nahi karta** — sirf
+batata hai. Jhootha alarm channel ko wallpaper bana deta hai (TRAP #192).
+
+### 🐛 Meri apni galti — ship se PEHLE pakdi (TRAP #197 ki hi shakl)
+
+Pehla version har trade ko `lot_size` se divide karta tha. `dhan_master` ka lot-size
+lookup **expired contracts pe kachra** deta hai: `straddle_v1` ki **har trade qty=65** thi,
+par resolve hue "lots" **0.02 se 2.6** tak → per-lot numbers **26× inflate**
+(raw gross −₹10,940 → mera −₹2,82,510).
+
+**Ye wahi bug hai jo aaj poore din pakda ja raha tha (P&L ko us qty se divide karna jispe
+wo naapa hi nahi gaya) — aur wo bhi usi tool me jo is class ko pakadne ko bana hai.**
+
+Fix: **per-UNIT** (`pnl/qty`) — `qty` dono taraf (backtest `all_trades` + `order_store`)
+EXACT record hoti hai, koi lookup chahiye hi nahi, drift ho hi nahi sakti.
+**Pakda kaise:** raw `order_store` total se cross-check karke, output "sensible lag raha
+hai" maan ke nahi.
+
+### Ek aur galti: do alag cheezein ek verdict me thi
+
+Pehla version DD-breach pe bhi "decayed" bolta tha. 02.07 ka live expectancy backtest se
+**BEHTAR** tha (p=1.000) par DD bada — usko "edge marr gayi" bolna **jhooth** hai. Ab:
+`p<0.05` = **decayed** (kamai peeche), DD-breach + healthy kamai = **risk** (size ka
+sawaal, edge ka nahi), alag message.
+
+### Pehle hi run ne khud ko validate kar diya
+
+Bina kuch bataye, aaj jo maine haath se (real-lake reprice se) dhoondha tha, detector ne
+**wahi swatantra roop se** nikala:
+
+| | detector | aaj ka alag saboot |
+|---|---|---|
+| 00.04 Long Straddle | 🔴 RED p=0.000 | real-lake −₹2,90,765 |
+| 00.07 Long Strangle | 🔴 RED p=0.001 | real-lake −₹3,55,655 |
+| 02.10.01 BNF hedged | 🔴 RED p=0.004 | poori session ka subject |
+| 11.01 Delta BTC | 🔴 RED p=0.010 | lookahead bug, corrected Sharpe −4.5 |
+| 00.05 dvert · 00.06 backspread | 🟠 AMBER | real-lake dono negative |
+
+**⚠️ Aur ek jo maine nahi socha tha:** **04.03.02 — aaj ka ekmatra "survivor" — live me
+🟠 AMBER hai** (42 trades, live −₹3.4/unit vs backtest +₹3.5/unit, p=0.174). Statistically
+abhi conclusive nahi (isliye AMBER, RED nahi), par **jo strategy aaj publish ki, wo live
+me apne backtest se peeche chal rahi hai.**
+
+### Roz chalta hai (warna wahi purani galti)
+
+`algo-decaywatch.timer` Mon-Fri **16:20 IST**, `Persistent=true`; `--notify` → bell +
+**phone**; theek hone pe `notify.resolve` khud clear karta hai.
+**Verified end-to-end (maan ke nahi):** asli run → exit 3 (`SuccessExitStatus=0 3`, TRAP
+#193) → **10 alerts bell me + 5 error alerts Telegram pe**.
+*(Telegram verify karte waqt bhi pehli baar galat nesting level padha — `st` ka top-level,
+jabki keys `st["keys"]` me hain. Aaj ka doosra "check ne galat jagah dekha".)*
+
+### Sabak
+1. **Detector jo koi na chalaye = detector nahi hai.** Aaj hi teen misaal
+   (`bs_vs_reallake` 20-July se anchhua jabki 6 disproven strategies deployed rahin).
+   **Timer ke saath ship karo, script ke roop me nahi.**
+2. **Verification usi source/level se karo jise asli code padhta hai.** Aaj do baar:
+   badge (`meta.json` vs `results.js`) aur telegram push-state ka nesting.
+3. **Naapne ka paimana wo chuno jo bina lookup ke sach rahe** — `qty` per-unit deta hai;
+   `lot_size` ek lookup hai, aur lookup jhooth bol sakta hai.
