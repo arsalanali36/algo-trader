@@ -195,7 +195,16 @@ def apply(date, broker_name="kite", dry_run=True, log=print):
 
 
 _last_mirror = 0.0
-_MIRROR_INTERVAL = 150.0   # ~2.5 min
+# 2026-09-01: 150s → 30s. At 150s a position placed by hand on Zerodha stayed
+# invisible to the app for up to 2.5 min — and until it is in the ledger NO exit
+# trigger can arm on it, so a manual trade sat unprotected for that whole window.
+# Cost of the change, counted from the code: apply() makes 1-2 broker.trades()
+# calls per run (resolve_dhan's kite.instruments("NFO") is day-cached, so it does
+# not re-fetch) → ~120-240 Kite calls/hour vs Kite's ~3 req/s (10,800/hour) ceiling,
+# ~2% of quota, and kite_rate_limiter gates it anyway. Kite read calls are not
+# IP-whitelisted and share none of Dhan's budget. The "🔄 Sync from Broker" button
+# stays the deterministic zero-latency path; this is the safety net behind it.
+_MIRROR_INTERVAL = 30.0
 
 
 def _in_window():

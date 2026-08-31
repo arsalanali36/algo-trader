@@ -5169,6 +5169,69 @@ def api_position_exit_rule_clear():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+_TM_IDX_SEC = {"NIFTY": "13", "BANKNIFTY": "25"}
+
+
+def _tm_index_reason(rule, legs, per, slc, log=print):
+    """Trade Manager: evaluate a rule's INDEX-based triggers (index points /
+    absolute index level) → (reason, src, level) or (None, None, None).
+
+    Runs only for rules that actually carry them, so a plain ₹-MTM rule never
+    touches any of this. Everything here freezes rather than fires when data is
+    missing: no underlying spot, unknown index, or an unresolvable candle all
+    return None. Confirmation (wick / candle-close / close+N-min) is applied per
+    the rule's own setting; its progress is persisted so a monitor restart mid-
+    confirmation resumes instead of silently restarting the window.
+
+    NOTE: confirmation applies to the INDEX triggers only. The ₹-combined-MTM
+    trigger keeps firing immediately, exactly as it does today — unchanged."""
+    trigs = per.trigger_levels(rule)
+    if not trigs:
+        return None, None, None
+    sym = str((legs[0].get("symbol") or "")
+              or str(legs[0].get("sym") or "").split("-")[0]).upper()
+    idx_sec = _TM_IDX_SEC.get(sym)
+    if not idx_sec:
+        return None, None, None                     # unknown underlying → freeze
+    spot = slc.get_index(sym, max_age=20.0)
+    if not spot or float(spot) <= 0:
+        return None, None, None                     # no spot → freeze (TRAP #1 shape)
+
+    dir_ = 1 if float(rule.get("dir") or 1) >= 0 else -1
+    mode = str(rule.get("confirm_mode") or "close")
+    tf_min = {"1m": 1, "3m": 3, "5m": 5, "15m": 15}.get(str(rule.get("tf") or "5m"), 5)
+    conf = dict(rule.get("conf") or {})
+    changed = False
+    hit = None
+
+    # nearest-first: whichever armed level price is closest to decides first
+    for t in sorted(trigs, key=lambda x: abs(float(x["level"]) - float(spot))):
+        slot = "%s_%s" % (t["src"], t["side"])
+        beyond = per.is_beyond(spot, t["level"], t["side"], dir_)
+        on_close = None
+        if mode != "wick" and beyond:
+            cc = _last_closed_candle_close(idx_sec, "IDX_I", tf_min)
+            # None stays None on purpose: "candle not known" must NOT read as
+            # "closed back inside", or an un-fetchable candle would silently
+            # cancel a real breach.
+            if cc is not None:
+                on_close = per.is_beyond(cc, t["level"], t["side"], dir_)
+        st, fire = per.advance_confirm(conf.get(slot), beyond, on_close,
+                                       _time.time(), mode,
+                                       rule.get("confirm_min") or 2)
+        if st != conf.get(slot):
+            conf[slot] = st
+            changed = True
+        if fire and hit is None:
+            hit = (t["side"], t["src"], float(t["level"]))
+    if changed:
+        try:
+            per.update_conf(rule.get("key"), conf)
+        except Exception as e:
+            log(f"[exit-rule] conf persist fail ({rule.get('key')}): {e}")
+    return hit if hit else (None, None, None)
+
+
 def _run_position_exit_rules(log=print):
     """Evaluate each armed combined-MTM GROUP rule against LIVE MTM and square
     off the whole group on target/SL (#02). Runs inside auto_straddle_loop
@@ -5263,9 +5326,21 @@ def _run_position_exit_rules(log=print):
             if not ok_data:
                 continue                     # FREEZE — incomplete data, never fire
             reason = per.check_exit(combined, rule.get("target_rs"), rule.get("sl_rs"))
+            _why = f"combined MTM ₹{combined:,.0f}"
+            if reason not in ("target", "sl"):
+                # Trade Manager index triggers (index points / index level). OR
+                # logic: the ₹ rule above already had its say; this is simply the
+                # next armed source. No-op for any rule without them.
+                try:
+                    reason, _src, _lvl = _tm_index_reason(rule, legs, per, slc, log)
+                    if reason:
+                        _why = f"{'index level' if _src == 'il' else 'index points'} {_lvl:,.0f}"
+                except Exception as _te:
+                    log(f"[exit-rule] index-trigger err ({key}): {_te}")
+                    reason = None
             if reason not in ("target", "sl"):
                 continue
-            log(f"[exit-rule] {key} {reason.upper()} @ combined MTM ₹{combined:,.0f} — "
+            log(f"[exit-rule] {key} {reason.upper()} @ {_why} — "
                 f"squaring off {len(legs)} legs ({rule.get('mode')})")
             # ORDERED square-off: shorts (SELL) buy-to-close FIRST, then wings
             # (BUY) sell-to-close — stripping the hedge first spikes margin and
@@ -5291,7 +5366,7 @@ def _run_position_exit_rules(log=print):
             try:
                 import notify
                 notify.push(f"{'🎯' if reason == 'target' else '🛑'} Group auto-exit "
-                            f"{reason.upper()} — combined MTM ₹{combined:,.0f} ({len(legs)} legs, {rule.get('mode')})",
+                            f"{reason.upper()} — {_why} ({len(legs)} legs, {rule.get('mode')})",
                             level="info" if reason == "target" else "warn",
                             key="grpexit_%s" % key, source="chain")
             except Exception:
@@ -11141,13 +11216,22 @@ def _rest_ltp_fallback(sec_id, seg):
 _candle_close_cache = {}   # sec_id -> (close_price, fetched_at) — throttles Dhan intraday calls
 _CANDLE_CLOSE_TTL = 30      # seconds; a 1-min candle only closes once a minute anyway
 
-def _last_closed_candle_close(sec_id, seg):
-    """Close price of the most recently CLOSED 1-min candle (not the still-forming
-    one) — used by the CANDLE_CLOSE SL/TP trigger type. Cached (30s TTL) to avoid
+def _last_closed_candle_close(sec_id, seg, tf_min=1):
+    """Close price of the most recently CLOSED candle (not the still-forming one)
+    — used by the CANDLE_CLOSE SL/TP trigger type. Cached (30s TTL) to avoid
     hammering Dhan's intraday-candle endpoint every pos_monitor_loop tick (same
-    DH-904 rate-limit concern already documented elsewhere in this codebase)."""
+    DH-904 rate-limit concern already documented elsewhere in this codebase).
+
+    tf_min>1 (Trade Manager's candle-close exit confirmation) buckets the SAME
+    1-min fetch into tf_min groups instead of issuing another Dhan call, so a 5m
+    close costs exactly what a 1m close costs. Plain epoch modulo is safe for
+    1/3/5/15m because IST is UTC+5:30 and 330 is divisible by each of them, so
+    bucket edges land on real IST candle boundaries. tf_min=1 (every pre-existing
+    caller) walks the identical path as before."""
     import time as _t
-    cached = _candle_close_cache.get(sec_id)
+    tf_min = max(1, int(tf_min or 1))
+    ck = "%s:%d" % (sec_id, tf_min)
+    cached = _candle_close_cache.get(ck)
     if cached and (_t.time() - cached[1]) < _CANDLE_CLOSE_TTL:
         return cached[0]
     try:
@@ -11181,8 +11265,20 @@ def _last_closed_candle_close(sec_id, seg):
         closed_idx = [i for i, ts in enumerate(timestamps) if int(ts) + 60 <= now_epoch]
         if not closed_idx:
             return None
-        last_close = float(closes[closed_idx[-1]])
-        _candle_close_cache[sec_id] = (last_close, _t.time())
+        if tf_min > 1:
+            # last FULLY-closed tf_min bucket; its close = close of the last 1-min
+            # bar inside it. A bucket still in progress is skipped, exactly like
+            # the still-forming 1-min bar above.
+            span = tf_min * 60
+            done = [i for i in closed_idx if (int(timestamps[i]) - int(timestamps[i]) % span) + span <= now_epoch]
+            if not done:
+                return None
+            b_start = int(timestamps[done[-1]]) - int(timestamps[done[-1]]) % span
+            in_bucket = [i for i in done if int(timestamps[i]) - int(timestamps[i]) % span == b_start]
+            last_close = float(closes[in_bucket[-1]])
+        else:
+            last_close = float(closes[closed_idx[-1]])
+        _candle_close_cache[ck] = (last_close, _t.time())
         return last_close
     except Exception as e:
         print("[_last_closed_candle_close] fail:", e, flush=True)
