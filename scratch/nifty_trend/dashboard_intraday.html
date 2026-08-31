@@ -229,6 +229,8 @@ function comboKey(){return (HAS_PASS&&R.combos[PASS+'|'+P])?PASS+'|'+P:P;}
 function C(){return R.combos[comboKey()]}
 const PASS_NOTE={
   instrument:'<b>① Instrument</b> — raw signal on <b>NIFTY spot</b>, spot-notional P&amp;L, house rules on (max 2/day, 3:15 exit). No daily ₹ caps, no options. <i>Question: is there an edge at all?</i>',
+  // meta.pass_note overrides the canned pass blurb — a run may keep the 'bs' pass KEY
+  // for schema compatibility while its P&L is not Black-Scholes at all (TRAP #199).
   rms:'<b>② + RMS</b> — same trades, plus the account <b>daily loss/profit caps</b> (spot-notional scale). <i>Does clamping bad/good days help or hurt the edge?</i>',
   bs:'<b>③ + Black-Scholes</b> — pass-② trades repriced into the <b>ATM CE/PE premium actually traded</b> (delta+theta, real Zerodha F&amp;O charges). This is the <b>deployable</b> P&amp;L. ₹ scale &amp; fees here are real; ①② are on the underlying and not directly comparable in ₹.'
 };

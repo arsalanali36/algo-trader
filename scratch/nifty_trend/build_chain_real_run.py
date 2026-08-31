@@ -95,15 +95,42 @@ def _metrics(rr):
     dn = net[net < 0]
     sortino = round((net.mean() / dn.std()) * math.sqrt(n / yrs), 3) if len(dn) and dn.std() else sharpe
     ws, ls = _streaks(net)
+    ann = round(net.sum() / START_CAP * 100 / yrs, 3)
+    maxdd = round(dd_abs / START_CAP * 100, 3)
+    aw = float(net[wins].mean()) if wins.any() else 0.0
+    al = float(net[~wins].mean()) if (~wins).any() else 0.0
+    # longest stretch below the equity peak, in CALENDAR days (page shows "days")
+    uw = eq - peak
+    dts = [pd.Timestamp(r["date"]) for r in rr]
+    uw_days = run = 0
+    start = None
+    for i, v in enumerate(uw):
+        if v < 0:
+            start = dts[i] if start is None else start
+            run = (dts[i] - start).days
+            uw_days = max(uw_days, run)
+        else:
+            start = None
+    longs = [r for r in rr if str(r.get("side")) == "long"]
+    shorts = [r for r in rr if str(r.get("side")) != "long"]
+    wl = lambda s: round(100 * np.mean([r["net"] > 0 for r in s]), 1) if s else 0.0
     return dict(trades=n, net_pct=round(net.sum() / START_CAP * 100, 3), net_abs=round(net.sum()),
                 final_cap=round(START_CAP + net.sum()), start_cap=START_CAP, sharpe=sharpe,
-                sortino=sortino, annual_return=round(net.sum() / START_CAP * 100 / yrs, 3),
-                maxdd=round(dd_abs / START_CAP * 100, 3), maxdd_abs=round(dd_abs),
+                sortino=sortino, annual_return=ann,
+                maxdd=maxdd, maxdd_abs=round(dd_abs),
+                calmar=round(ann / abs(maxdd), 3) if maxdd else 0.0,
+                fees=round(sum(r["charges"] for r in rr)),
+                underwater_days=int(uw_days),
                 win_rate=round(100 * wins.mean(), 3),
                 profit_factor=round(gp / gl, 3) if gl else 999,
                 expectancy=round(net.mean(), 1), years=round(yrs, 2),
-                avg_win=round(net[wins].mean() if wins.any() else 0, 1),
-                avg_loss=round(net[~wins].mean() if (~wins).any() else 0, 1),
+                avg_win=round(aw, 1), avg_loss=round(al, 1),
+                wl_ratio=round(aw / abs(al), 3) if al else 0.0,
+                total_wins=int(wins.sum()), total_losses=int((~wins).sum()),
+                trades_per_day=round(n / max(1, len({r["date"] for r in rr})), 2),
+                avg_bars=0,
+                pct_long=round(100 * len(longs) / n, 1), pct_short=round(100 * len(shorts) / n, 1),
+                win_long=wl(longs), win_short=wl(shorts),
                 largest_win=round(net.max()), largest_loss=round(net.min()),
                 win_streak=ws, loss_streak=ls)
 
@@ -206,11 +233,32 @@ combos = {"bs|full": combo(rows), "bs|train": combo(tr), "bs|oos": combo(oo),
 mf, mt, mo = _metrics(rows), _metrics(tr), _metrics(oo)
 p_full = _sig(rows)["p_value"]
 
+NOTE = ("Replaces the Black-Scholes run (chain_zone_longatm, Sharpe 1.95) which overstated "
+        "a BUYER's edge - BS understates the theta a buyer bleeds (TRAP #199). Same signal, "
+        "same ORIGINAL params, same spot-based exits; only the option pricing is real. The "
+        "lake starts 2021-07, so the 2018-2021 part of the original window is not covered. A "
+        "192-config param sweep was run and REJECTED: the train winner was Rs7,778 WORSE "
+        "out-of-sample and train-vs-OOS correlation was only 0.234 (TRAP #200) - params are "
+        "deliberately left at their original values.")
+METHOD = "REAL OptChainLake premium + date-aware Zerodha charges + DOM slip, 1 lot"
+
+# real_cost MUST live in the results.js meta, not only in meta.json: the page's
+# provenance badge reads R.meta.real_cost.method. Putting it only in meta.json is what
+# made this run show "NOT PROVEN - pricing source not recorded" on its first publish.
 meta = dict(window=[rows[0]["date"], rows[-1]["date"]], days=len({r["date"] for r in rows}),
             start_cap=START_CAP,
             design="04.03.02 Ars chain Directional BUY (long ATM) - REAL PREMIUM, 1 lot",
             tf="5m", candles=[], passes=["bs"], periods=["full", "train", "oos"],
-            instrument="NIFTY", lot_size=LOT, lots=LOTS)
+            instrument="NIFTY", lot_size=LOT, lots=LOTS,
+            real_cost=dict(method=METHOD, note=NOTE),
+            # the template renders pass_notes[pass] in place of its canned blurb. The pass
+            # KEY stays "bs" for schema compatibility (Stats-tab reads combos["bs|full"]),
+            # but this P&L is not Black-Scholes at all — say so where a reader will look.
+            pass_notes={"bs": ("<b>REAL premium</b> &mdash; every trade repriced on the "
+                               "<b>actual traded ATM CE/PE premium</b> from OptChainLake "
+                               "(date-aware Zerodha F&amp;O charges + DOM slip). "
+                               "<b>No Black-Scholes anywhere.</b> The pass key is still "
+                               "<code>bs</code> for schema compatibility only.")})
 
 os.makedirs(os.path.join(RUNS, SLUG), exist_ok=True)
 with io.open(os.path.join(RUNS, SLUG, "results.js"), "w", encoding="utf-8") as f:
@@ -219,14 +267,6 @@ _dash = io.open(os.path.join(HERE, "dashboard_intraday.html"), encoding="utf-8")
     .replace('src="results_intraday.js"', 'src="results.js"')
 with io.open(os.path.join(RUNS, SLUG, "index.html"), "w", encoding="utf-8") as f:
     f.write(_dash)
-
-NOTE = ("Replaces the Black-Scholes run (chain_zone_longatm, Sharpe 1.95) which overstated "
-        "a BUYER's edge - BS understates the theta a buyer bleeds (TRAP #199). Same signal, "
-        "same ORIGINAL params, same spot-based exits; only the option pricing is real. The "
-        "lake starts 2021-07, so the 2018-2021 part of the original window is not covered. A "
-        "192-config param sweep was run and REJECTED: the train winner was Rs7,778 WORSE "
-        "out-of-sample and train-vs-OOS correlation was only 0.234 (TRAP #200) - params are "
-        "deliberately left at their original values.")
 
 entry = dict(slug=SLUG, design="chain_zone",
              title="04.03.02 - Ars chain Directional BUY (long ATM) - REAL PREMIUM",
@@ -241,8 +281,7 @@ entry = dict(slug=SLUG, design="chain_zone",
              p_value=p_full, created="2026-08-31 16:00",
              deploy_key="chainzone_v1", deployed="chainzone_v1",
              real_cost=dict(
-                 method="REAL OptChainLake premium + date-aware Zerodha charges + DOM slip, 1 lot",
-                 note=NOTE))
+                 method=METHOD, note=NOTE))
 with io.open(os.path.join(RUNS, SLUG, "meta.json"), "w", encoding="utf-8") as f:
     json.dump(entry, f, indent=1, default=str)
 
