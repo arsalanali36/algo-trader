@@ -1,0 +1,13 @@
+[Unit]
+Description=CODE3B strategy-decay watch — live/paper vs apna backtest (report + alert)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+Environment=PYTHONUNBUFFERED=1
+# python path me space hai -> quote zaroori (systemd 203/EXEC warna)
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" -X utf8 _ops/decay_watch.py --notify
+# 3 = "chala, koi strategy backtest se hat gayi, alert nikal chuka": success.
+# 1 = CRASH: failure hi rehne do (TRAP #193).
+SuccessExitStatus=0 3

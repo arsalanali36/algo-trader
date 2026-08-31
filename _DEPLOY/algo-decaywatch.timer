@@ -1,0 +1,10 @@
+[Unit]
+Description=CODE3B decay watch — har trading din market band hone ke baad
+
+[Timer]
+OnCalendar=Mon..Fri 16:20 Asia/Kolkata
+Persistent=true
+AccuracySec=2min
+
+[Install]
+WantedBy=timers.target
