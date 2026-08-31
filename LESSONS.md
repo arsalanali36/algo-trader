@@ -5296,3 +5296,45 @@ hua). `chainzone_v1` pehle hi band. **Koi live real-money strategy chalu nahi.**
 `orb_v1`/`orbst_v1`/`chainzone_v1` ka **poora real-lake re-backtest (train/OOS ke saath)
 pending** — ye sirf reprice hai, jisme BS run ki exit-timing wahi rakhi gayi hai.
 `orb_overnight_v1` aur `banknifty_v1` **abhi bhi unknown** (NIFTY lake tool ke dayre se bahar).
+
+---
+
+## TRAP #200 — 04.03.02 ka param sweep: train ka winner OOS me baseline se KHARAB nikla (2026-08-31)
+
+**User:** *"isko optimise kar sakte hain kya param sweep se, ki jeet aur zyada ho jaye,
+to ye truly killer strategy ban jaye?"* — jaayaz sawaal. Jawab bahs se nahi, protocol se.
+
+**Protocol (pehle tay kiya, phir chalaya):** sweep sirf **TRAIN** (<2025-01-01) pe; har
+config REAL premium se; exit params (`atr_sl`/`rr`) **FIX** (exit-tweak pe 4 pichhle
+research sab REJECT — rr_sweep, lot_sl, rsi_fixed_bracket, default_target_sl); baseline
+usi list me; **OOS ek hi baar**, aakhir me.
+
+**192 signal-configs, real-lake priced:**
+
+```
+TRAIN WINNER   train Rs178,125 (PF 1.29)   OOS Rs62,922 (PF 1.22)
+ABHI KA CONFIG train Rs160,417 (PF 1.26)   OOS Rs70,700 (PF 1.25)   <- rank 6/192
+   >> winner ka OOS baseline se Rs7,778 KHARAB
+
+train-vs-OOS correlation = 0.234
+train net range Rs-48,572 .. Rs178,125   |   OOS net range Rs-13,944 .. Rs123,227
+```
+
+### Sabak
+1. **Sweep ne strategy behtar nahi ki — bigaad di.** Train pe +Rs17,708 "sudhar" OOS me
+   −Rs7,778 ban gaya. Textbook overfit, apne hi data pe live dekha.
+2. **corr 0.234** — train ki ranking OOS ko lagbhag **predict karti hi nahi**. 192 me se
+   "best" chunna matlab shor me se best chunna. OOS ka sabse achha config Rs1,23,227 ka
+   tha, par train se use pehchana **nahi ja sakta tha**.
+3. **Abhi ka config pehle se rank 6/192 hai** aur top-8 me uska **OOS PF sabse ooncha
+   (1.25)**. Wo already ek robust region me baitha hai — usse hilane ka koi karan nahi.
+4. **Ye edge isliye zinda hai ki uske params is data pe tune NAHI hue.** Wo BS data pe
+   chune gaye the, isliye real-lake result ek swatantra jaanch bana. Sweep karte hi wo
+   swatantrata khatam ho jaati — aur uske badle kuch mila bhi nahi.
+
+**DO-NOT-REDO:** 04.03.02 ka signal-param sweep. Agar kabhi karna hi ho to naya data chahiye,
+usi 2021-2026 window pe nahi. Script `scratch/nifty_trend/chain_sweep_honest.py` rakhi hai —
+protocol ke liye reuse karo, nateeje ke liye nahi.
+
+**Paanchvi baar:** exit-sweep 4 baar REJECT hua, ab signal-sweep bhi. Is strategy family pe
+optimisation se aaj tak **ek baar bhi** faayda nahi mila.
