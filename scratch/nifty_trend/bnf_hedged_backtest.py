@@ -101,14 +101,14 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
         xsce, xspe = base._px(g, x, "CE", kc_s), base._px(g, x, "PE", kp_s)
         xwce = _bs_wing(Sx, kc_w, T, sigma, "CE") * wing_mult; xwpe = _bs_wing(Sx, kp_w, T, sigma, "PE") * wing_mult
         when = pd.Timestamp(DT[e])
-        # gross = short credit captured − wing debit paid (all × lot)
-        gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * lot
-        fee = (bs.calc_charges(sce, xsce, lot, entry_side="SELL", when=when) +
-               bs.calc_charges(spe, xspe, lot, entry_side="SELL", when=when) +
-               bs.calc_charges(wce, xwce, lot, entry_side="BUY", when=when) +
-               bs.calc_charges(wpe, xwpe, lot, entry_side="BUY", when=when))
-        slip = (bs.slip_cost_leg(sce, xsce, lot) + bs.slip_cost_leg(spe, xspe, lot) +
-                bs.slip_cost_leg(wce, xwce, lot) + bs.slip_cost_leg(wpe, xwpe, lot))
+        # gross = short credit captured - wing debit paid (all x qty = lots*lot)
+        gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * qty
+        fee = (bs.calc_charges(sce, xsce, qty, entry_side="SELL", when=when) +
+               bs.calc_charges(spe, xspe, qty, entry_side="SELL", when=when) +
+               bs.calc_charges(wce, xwce, qty, entry_side="BUY", when=when) +
+               bs.calc_charges(wpe, xwpe, qty, entry_side="BUY", when=when))
+        slip = (bs.slip_cost_leg(sce, xsce, qty) + bs.slip_cost_leg(spe, xspe, qty) +
+                bs.slip_cost_leg(wce, xwce, qty) + bs.slip_cost_leg(wpe, xwpe, qty))
         net = gross - fee - slip
         cap = (wing * STEP - entry_credit) * qty       # structural max loss (wing-defined)
         rows.append(dict(day=d, net=net, gross=gross, fee=fee, slip=slip,
@@ -183,11 +183,11 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
         xsce, xspe = base._px(g, x, "CE", kc_s), base._px(g, x, "PE", kp_s)
         xwce = _bs_wing(Sx, kc_w, Tx, sigma, "CE"); xwpe = _bs_wing(Sx, kp_w, Tx, sigma, "PE")
         when = pd.Timestamp(DT[e])
-        gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * lot
-        fee = (bs.calc_charges(sce, xsce, lot, "SELL", when) + bs.calc_charges(spe, xspe, lot, "SELL", when) +
-               bs.calc_charges(wce, xwce, lot, "BUY", when) + bs.calc_charges(wpe, xwpe, lot, "BUY", when))
-        slip = (bs.slip_cost_leg(sce, xsce, lot) + bs.slip_cost_leg(spe, xspe, lot) +
-                bs.slip_cost_leg(wce, xwce, lot) + bs.slip_cost_leg(wpe, xwpe, lot))
+        gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * qty
+        fee = (bs.calc_charges(sce, xsce, qty, "SELL", when) + bs.calc_charges(spe, xspe, qty, "SELL", when) +
+               bs.calc_charges(wce, xwce, qty, "BUY", when) + bs.calc_charges(wpe, xwpe, qty, "BUY", when))
+        slip = (bs.slip_cost_leg(sce, xsce, qty) + bs.slip_cost_leg(spe, xspe, qty) +
+                bs.slip_cost_leg(wce, xwce, qty) + bs.slip_cost_leg(wpe, xwpe, qty))
         cap = (wing * STEP - entry_credit) * qty       # structural max loss (wing-defined)
         rows.append(dict(day=d0, exit_day=DAY[x], hold=(pd.Timestamp(DT[x]) - when).days,
                          net=gross - fee - slip, gross=gross, fee=fee, slip=slip, reason=reason,

@@ -101,11 +101,11 @@ def run(g, rule, basket_sl=4000.0, basket_tgt=8000.0, lots=5, max_hold=1, exp_sq
         xsce, xspe = base._px(g, x, "CE", kc_s), base._px(g, x, "PE", kp_s)
         xwce, xwpe = _wing(Sx, kc_w, Tx, sig, "CE"), _wing(Sx, kp_w, Tx, sig, "PE")
         when = pd.Timestamp(DT[e])
-        gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * lot
-        fee = (bs.calc_charges(sce, xsce, lot, "SELL", when) + bs.calc_charges(spe, xspe, lot, "SELL", when) +
-               bs.calc_charges(wce, xwce, lot, "BUY", when) + bs.calc_charges(wpe, xwpe, lot, "BUY", when))
-        slip = (bs.slip_cost_leg(sce, xsce, lot) + bs.slip_cost_leg(spe, xspe, lot) +
-                bs.slip_cost_leg(wce, xwce, lot) + bs.slip_cost_leg(wpe, xwpe, lot))
+        gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * qty
+        fee = (bs.calc_charges(sce, xsce, qty, "SELL", when) + bs.calc_charges(spe, xspe, qty, "SELL", when) +
+               bs.calc_charges(wce, xwce, qty, "BUY", when) + bs.calc_charges(wpe, xwpe, qty, "BUY", when))
+        slip = (bs.slip_cost_leg(sce, xsce, qty) + bs.slip_cost_leg(spe, xspe, qty) +
+                bs.slip_cost_leg(wce, xwce, qty) + bs.slip_cost_leg(wpe, xwpe, qty))
         rows.append(dict(day=d0, net=gross - fee - slip, reason=reason,
                          net_delta=net_delta, leg_gap=leg_gap, co=co, po=po))
         hold_until = DAY[x]

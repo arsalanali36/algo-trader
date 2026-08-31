@@ -5040,3 +5040,74 @@ dikha rahi ho, koi ek "paper" information deta hi nahi.
 order_store id `weekly_ironfly_v1` hai par nifty_config block `_weekly_ironfly`. Ab
 registry me explicit **`settings_key`**. **Sabak: registry-id ≠ config-block-name wali
 strategies har us tool se chup-chaap bahar reh jaati hain jo config_key se lookup karta hai.**
+
+---
+
+## TRAP #197 — exit-rule 5 lot pe, P&L 1 lot pe: poora backtest page 5× chhota chhapa, aur us jhoothe scale pe REAL PAISA laga (2026-08-31, user-reported, LIVE)
+
+**Lakshan (user):** *"backtest keh raha hai 5 lot pe sirf EK baar ₹4,000 tak loss gaya —
+par real me teen din se lagataar, aur ₹4,000 se seedha upar. Ye kaisa kachra backtest hai?"*
+
+**Sach:** backtest kachra nahi tha — **page ka ₹ scale jhooth tha.**
+`scratch/nifty_trend/bnf_hedged_backtest.py` me ek hi function ke andar do alag qty:
+
+```python
+lot = base.lot_for(d0); qty = lots * lot        # qty = 5 x 30 = 150
+
+basket = (entry_credit - net_val) * qty         # EXIT RULE  -> 5 lot (Rs4,000)
+gross  = (...)                          * lot   # RECORDED P&L -> 1 lot   <-- BUG
+fee    = calc_charges(..., lot, ...)            # charges bhi 1 lot ke     <-- BUG
+slip   = slip_cost_leg(..., lot)                #                          <-- BUG
+```
+
+Stop 5 lot ke ₹4,000 pe lagta tha, par jo nuksaan **record** hota tha wo usi trade ka
+**1-lot hissa**. Phir `build_bnf_positional_run.py` un 1-lot rows pe `lots=5` ka tag
+laga deta, aur run-page ka lot-scaler `_LOTMULT = lots_selected / lots_in_run = 5/5 = 1`
+maan ke unhe **bina scale kiye "5 LOTS" ke naam se** chhaap deta.
+
+| | page pe (galat) | sach (5 lot) |
+|---|---|---|
+| worst trade | −₹10,428 | **−₹51,383** |
+| avg loss | −₹1,408 | **−₹6,335** |
+| ₹4,000 se bada loss | **3 / 874** | **383 / 874 (44%)** |
+| maxDD | −5.5% | **−23.2% (₹1.16L)** |
+
+**Keemat:** user ne is page ko padh ke 02.10.01 ko REAL MONEY pe 5 lot chalaya.
+24 Aug −₹4,698 · 27 Aug −₹1,933 · 28 Aug −₹1,925 · 31 Aug −₹4,996 (BASKET_SL entry ke
+**7 minute** baad). Ye sab corrected backtest ke bilkul andar hai (avg loss −₹6,335,
+max losing streak **12**) — par 5× chhote page pe ye "assambhav" lag raha tha.
+
+### Sabak
+1. **Jis qty pe exit rule chalta hai, P&L usi qty pe record hona chahiye.** Ek function
+   me `lot` aur `qty` dono ka hona hi red flag hai. Agar dono chahiye to naam aisa rakho
+   ki galti dikh jaaye (`qty_pos` vs `qty_one_lot`), aur comment likhne se kaam nahi
+   chalta — yahan comment `# gross ... (all × lot)` **theek likha tha aur phir bhi galat tha.**
+2. **Ratios ne bug chhupa liya.** Sharpe/PF/Win% lot-invariant hain — wo sab "sahi"
+   dikh rahe the (3.47/2.60/55%), isliye kisi review me kuch galat nahi laga. **Sirf ₹
+   aur maxDD% jhooth bol rahe the** — aur position sizing wahi se hoti hai.
+3. **`net_u = net / qty` build-script me pehle se tha** = builder qty-scaled net *expect*
+   kar raha tha. Do file ke beech ka silent contract mismatch — type checker, test,
+   audit kisi ne nahi pakda kyunki dono taraf `float` hi tha.
+4. **Meri doosri galti (isi session me):** maine "fix" suggest kiya *"₹4,000 SL ko
+   ₹800–1,000/lot pe re-calibrate karo"* — 4000/5 lots = **₹800/lot pehle se hai**. Yaani
+   no-op ko fix bana ke pesh kiya, aur naya SL number **bina kisi backtest ke** asli paise
+   pe propose kiya. **Real-money knob ka koi bhi naya number backtest ke bina suggest mat karo.**
+
+### Structural guard (dobara na ho)
+`build_bnf_positional_run.py` me `_assert_lot_scale(df, BASKET_SL)` — SL-exit trades ka
+**median gross** basket-SL ke aas-paas (0.4x–2.0x) hona hi chahiye. 1-lot scale pe median
+−₹870 aata hai vs SL ₹4,000 → **run publish hi nahi hoga**. Dono direction verified.
+Koi bhi naya basket-SL/target wala run-builder ye assert copy kare.
+
+### Bacha kaun
+`scratch/weekly_ironfly/bt.py` (02.17, **asli paisa**) SAFE hai — wahan `QTY = LOTS * LOT`
+ek hi jagah define hai aur `gross = pts * QTY`. **Ek jagah qty define karna** hi asli fix hai.
+Affected sirf: `bnf_hedged_backtest.py`, `bnf_leg_balance.py` (dono fixed).
+
+### Abhi bhi khula (BS-wing fidelity)
+Corrected run me **4/874 trades apne structural wing-cap se bahar** hain (worst gross
+−₹50,988 vs cap −₹32,653; 2024-04-30, 2024-06-03/04 election, 2024-07-19, 2024-07-31).
+Wajah: shorts REAL lake premium hain par **wings Black-Scholes** hain jinka `sigma` entry
+pe freeze ho jaata hai — vol phatne pe real wing bachata hai, BS wing nahi. Yaani tail
+model **pessimistic** hai, par **bharosemand kisi bhi taraf nahi**. "Defined risk" ka
+daawa is run se **prove nahi hota**. Real wing premium se re-run pending.

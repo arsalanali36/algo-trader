@@ -13,10 +13,32 @@ RUNS = os.path.join(HERE, "runs")
 SLUG = "bnf_strangle_hedged"
 LOT_HINT, LOTS = 35, 5
 START_CAP = 500_000                     # 02.10.01 tier (~Rs4-5L)
+BASKET_SL, BASKET_TGT = 4000.0, 8000.0  # Rs on the WHOLE position (all LOTS)
 
 g = base.load_grid()
-df = bt.run_positional(g, 6, 5, 4000.0, 8000.0, LOTS, max_hold_days=1, exp_squareoff_days=2)
+df = bt.run_positional(g, 6, 5, BASKET_SL, BASKET_TGT, LOTS, max_hold_days=1, exp_squareoff_days=2)
 df = df.sort_values("day").reset_index(drop=True)
+
+
+def _assert_lot_scale(df, sl):
+    """GUARD (LESSONS #197). The exit rule and the recorded P&L MUST be on the same
+    qty. The basket SL fires at -Rs{sl} on the WHOLE position, so an SL-exit trade's
+    gross has to land near -sl. If it is a fraction of that, P&L was computed on a
+    different qty than the exit rule and every Rs on the published page is wrong by
+    that factor -- which is exactly how 02.10.01 shipped a 5x-understated page
+    (`gross = ... * lot` vs `basket = ... * qty`) and cost real money on 2026-08-31."""
+    sl_rows = df[df.reason == "SL"]
+    if len(sl_rows) < 10:
+        return
+    med = float(sl_rows.gross.median())
+    if not (-sl * 2.0 <= med <= -sl * 0.40):
+        raise AssertionError(
+            f"LOT-SCALE MISMATCH: basket SL = Rs{sl:,.0f} on the whole position, but the "
+            f"median SL-exit gross is Rs{med:,.0f}. P&L and exit rule are on different qty. "
+            f"Do NOT publish this run -- see LESSONS #197.")
+
+
+_assert_lot_scale(df, BASKET_SL)
 rows = [dict(date=str(r["day"]), exit_date=str(r["exit_day"]), net=float(r["net"]), gross=float(r["gross"]),
              charges=float(r["fee"] + r["slip"]), entry_credit=float(r["entry_credit"]),
              spot0=float(r["spot0"]), atm=float(r["atm"]), qty=int(r["qty"]), reason=str(r["reason"]))

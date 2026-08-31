@@ -22,21 +22,21 @@
  "days": 874,
  "significant": true,
  "bs_full": {
-  "sharpe": 3.465,
-  "net_pct": 175.561,
-  "maxdd": -5.51,
-  "win_rate": 55.492,
+  "sharpe": 3.986,
+  "net_pct": 1009.812,
+  "maxdd": -23.169,
+  "win_rate": 55.835,
   "trades": 874,
-  "profit_factor": 2.603
+  "profit_factor": 3.065
  },
  "combos": {
   "train": {
-   "sharpe": 3.514,
-   "net_pct": 113.175
+   "sharpe": 4.056,
+   "net_pct": 653.177
   },
   "oos": {
-   "sharpe": 3.399,
-   "net_pct": 62.385
+   "sharpe": 3.886,
+   "net_pct": 356.635
   }
  },
  "p_value": 0.0,

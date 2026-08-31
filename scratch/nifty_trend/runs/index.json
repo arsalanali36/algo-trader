@@ -1700,56 +1700,6 @@
   }
  },
  {
-  "slug": "bnf_strangle_hedged",
-  "design": "bnf_strangle_hedged",
-  "title": "02.10.01 - BNF Hedged Strangle (POSITIONAL, 1-night, REAL-lake, 5 lots)",
-  "tf": "positional",
-  "params": {
-   "off": 6,
-   "wing": 5,
-   "sl": 4000,
-   "tgt": 8000,
-   "max_hold": 1,
-   "structure": "iron_condor",
-   "lots": 5
-  },
-  "exit": "\u00b1Rs4k/Rs8k basket / next-day EOD (max 1 overnight)",
-  "instrument": "BANKNIFTY",
-  "lot_size": 35,
-  "window": [
-   "2021-08-04",
-   "2026-08-05"
-  ],
-  "days": 874,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 3.465,
-   "net_pct": 175.561,
-   "maxdd": -5.51,
-   "win_rate": 55.492,
-   "trades": 874,
-   "profit_factor": 2.603
-  },
-  "combos": {
-   "train": {
-    "sharpe": 3.514,
-    "net_pct": 113.175
-   },
-   "oos": {
-    "sharpe": 3.399,
-    "net_pct": 62.385
-   }
-  },
-  "p_value": 0.0,
-  "created": "2026-08-27 11:00",
-  "deploy_key": "bnf_strangle_hedged",
-  "deployed": "bnf_strangle_hedged",
-  "real_cost": {
-   "method": "REAL OptChainLake premium (shorts) + BS wings + date-aware Zerodha charges + DOM slip, 5 lots",
-   "note": "Positional max_hold=1 vs intraday: +44% net, less tax. Rs4k SL overnight-gap breach ~3x/5yr (worst -Rs10.4k, wing-BOUNDED). Sharpe>4 = seller red-flag; forward-paper."
-  }
- },
- {
   "slug": "m_pattern_ironfly",
   "design": "m_pattern_ironfly",
   "title": "02.18 - IV-pop M-rollover Iron-Fly (REAL-lake, 5 lots)",
@@ -1938,6 +1888,56 @@
   "real_cost": {
    "method": "REAL OptChainLake_1m premium + date-aware Zerodha charges, 4 lots (lot 75)",
    "note": "Naked ATM straddle on first alert/day, HELD to weekly expiry (no 3:15 force-exit), Rs4k basket. Only ~2.4% of trades actually hold overnight; edge = not scratching un-resolved trades at 3:15 (overnight theta -> next-day Rs4k target). 2022/2023 (intraday losing yrs) flip green. Naked = unbounded overnight gap tail (research; forward-paper before real money). NIFTY only. net_pct on Rs4L cap, not true CAGR."
+  }
+ },
+ {
+  "slug": "bnf_strangle_hedged",
+  "design": "bnf_strangle_hedged",
+  "title": "02.10.01 - BNF Hedged Strangle (POSITIONAL, 1-night, REAL-lake, 5 lots)",
+  "tf": "positional",
+  "params": {
+   "off": 6,
+   "wing": 5,
+   "sl": 4000,
+   "tgt": 8000,
+   "max_hold": 1,
+   "structure": "iron_condor",
+   "lots": 5
+  },
+  "exit": "\u00b1Rs4k/Rs8k basket / next-day EOD (max 1 overnight)",
+  "instrument": "BANKNIFTY",
+  "lot_size": 35,
+  "window": [
+   "2021-08-04",
+   "2026-08-05"
+  ],
+  "days": 874,
+  "significant": true,
+  "bs_full": {
+   "sharpe": 3.986,
+   "net_pct": 1009.812,
+   "maxdd": -23.169,
+   "win_rate": 55.835,
+   "trades": 874,
+   "profit_factor": 3.065
+  },
+  "combos": {
+   "train": {
+    "sharpe": 4.056,
+    "net_pct": 653.177
+   },
+   "oos": {
+    "sharpe": 3.886,
+    "net_pct": 356.635
+   }
+  },
+  "p_value": 0.0,
+  "created": "2026-08-27 11:00",
+  "deploy_key": "bnf_strangle_hedged",
+  "deployed": "bnf_strangle_hedged",
+  "real_cost": {
+   "method": "REAL OptChainLake premium (shorts) + BS wings + date-aware Zerodha charges + DOM slip, 5 lots",
+   "note": "Positional max_hold=1 vs intraday: +44% net, less tax. Rs4k SL overnight-gap breach ~3x/5yr (worst -Rs10.4k, wing-BOUNDED). Sharpe>4 = seller red-flag; forward-paper."
   }
  }
 ]
