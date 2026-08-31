@@ -5081,6 +5081,38 @@ def _exit_rule_identity(args):
     return per.rule_key(gid, ids), gid, ids, mode, rows, closed
 
 
+def _tm_num(v):
+    """Blank/None/garbage → None, else float. Keeps '' out of the rule store."""
+    if v is None or v == "":
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f else None
+
+
+def _tm_dir_from_legs(rows):
+    """Which way this position wants the index to go: +1 up, -1 down.
+
+    Derived from leg structure alone — SELL PE / BUY CE profit when the index
+    rises, SELL CE / BUY PE when it falls — weighted by qty. No pricing call, so
+    arming stays instant. A balanced straddle nets 0 → +1, under which "target"
+    simply means the UPPER level and "sl" the LOWER one; for a non-directional
+    structure that is exactly the useful reading (breach either side → get out)."""
+    net = 0.0
+    for r in rows or []:
+        ts = str(r.get("trad_sym") or r.get("sym") or "").upper()
+        opt = "CE" if ts.endswith("CE") else ("PE" if ts.endswith("PE") else "")
+        if not opt:
+            continue
+        side = str(r.get("entry") or "").upper()
+        qty = abs(float(r.get("qty") or 0))
+        bull = (opt == "PE") if side == "SELL" else (opt == "CE")
+        net += qty if bull else -qty
+    return 1 if net >= 0 else -1
+
+
 @app.route('/api/position-exit-rule', methods=['POST'])
 def api_position_exit_rule_set():
     """Arm a combined-MTM auto-exit rule for a position GROUP (#02). When the
@@ -5098,10 +5130,49 @@ def api_position_exit_rule_set():
             return jsonify({"ok": False, "msg": "group open nahi hai — auto-exit sirf live/open group pe lag sakta"})
         target_rs = float(d.get("target_rs") or 0)
         sl_rs = float(d.get("sl_rs") or 0)
-        if target_rs <= 0 and sl_rs >= 0:
+        # Trade Manager index triggers (optional). Omit them all and this route
+        # behaves exactly as before.
+        idx = {k: d.get(k) for k in ("idx_pt_tg", "idx_pt_sl", "idx_px_tg", "idx_px_sl")}
+        has_idx = any(_tm_num(v) for v in idx.values())
+        if target_rs <= 0 and sl_rs >= 0 and not has_idx:
             return jsonify({"ok": False, "msg": "Target (>0) ya SL (<0) me se kam se kam ek set karo"})
-        rule = per.set_rule(key, gid, ids, target_rs, sl_rs, mode)
-        return jsonify({"ok": True, "rule": rule, "mode": mode})
+        extra = {}
+        if has_idx:
+            en = d.get("enabled") if isinstance(d.get("enabled"), dict) else {}
+            extra = {
+                "enabled": {"rs": bool(en.get("rs", True)),
+                            "ip": bool(en.get("ip", True)),
+                            "il": bool(en.get("il", True))},
+                "tf": str(d.get("tf") or "5m"),
+                "confirm_mode": str(d.get("confirm_mode") or "close"),
+                "confirm_min": _tm_num(d.get("confirm_min")) or 2,
+                "dir": _tm_dir_from_legs(rows),
+            }
+            for k, v in idx.items():
+                extra[k] = _tm_num(v)
+            # entry_spot is captured HERE, server-side, from the live cache — never
+            # taken from the client (a stale/edited browser value would silently
+            # place every index-point trigger at the wrong level).
+            if extra.get("idx_pt_tg") or extra.get("idx_pt_sl"):
+                sym = str((rows[0].get("symbol") or "")
+                          or str(rows[0].get("trad_sym") or rows[0].get("sym") or "").split("-")[0]).upper()
+                spot = None
+                if sym in _TM_IDX_SEC:
+                    try:
+                        import shared_ltp_cache as _slc
+                        spot = _slc.get_index(sym, max_age=60.0)
+                    except Exception:
+                        spot = None
+                if not spot or float(spot) <= 0:
+                    # refuse loudly instead of arming a trigger that can never fire
+                    return jsonify({"ok": False, "msg":
+                                    f"{sym or 'is position'} ka live spot nahi mil raha — "
+                                    "index-points trigger arm nahi kar sakte. Index PRICE "
+                                    "(absolute level) use karo, ya spot aane par dobara try karo."})
+                extra["entry_spot"] = float(spot)
+        rule = per.set_rule(key, gid, ids, target_rs, sl_rs, mode, **extra)
+        return jsonify({"ok": True, "rule": rule, "mode": mode,
+                        "levels": per.trigger_levels(rule)})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 

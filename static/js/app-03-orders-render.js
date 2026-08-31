@@ -1332,6 +1332,7 @@
             <span class="grp-tot-ret" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
           </div>
           ${items.length >= 2 ? `<button onclick="event.stopPropagation();event.preventDefault();closeAllInGroup('${grpId}','${gLabelTxt}',${items.length})" title="Close all ${items.length} positions in this group (confirm ke saath)" style="margin-right:10px;padding:3px 9px;font-size:11px;font-weight:700;background:#f8514920;border:1px solid #f8514980;border-radius:4px;color:#f85149;cursor:pointer;white-space:nowrap">✕ Close all (${items.length})</button>` : ''}
+          ${typeof _tmBtn === 'function' ? _tmBtn(items, grpId) : ''}
           ${_payoffBtn(items, stratName)}
           <button onclick="editStrategyLabel(this, event)" data-strat="${String(stratName).replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
           <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
@@ -1345,6 +1346,7 @@
             <button onclick="_grpLegSel('${grpId}',true)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:2px 8px;cursor:pointer">All</button>
             <button onclick="_grpLegSel('${grpId}',false)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:2px 8px;cursor:pointer">None</button>
           </div>
+          <div id="tm-panel-${grpId}" style="display:none"></div>
           ${tableHtml}
         </div>
       </details>`;

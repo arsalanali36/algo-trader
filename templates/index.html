@@ -2133,7 +2133,7 @@
         <div style="display:flex;gap:6px;align-items:center">
           <button id="sync-broker-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
             onclick="syncBrokerPositions(this)"
-            title="Manually kuch close kiya Zerodha/Dhan pe? Yeh click karo — ghost positions clear hongi">🔄 Sync from
+            title="Zerodha/Dhan pe haath se order daala ya close kiya? Yeh click karo — position turant app me aa jayegi (ghost bhi clear honge). Background me ye har 30 sec khud bhi chalta hai; button 0-second wala raasta hai, khaas kar naya manual order daalne ke turant baad jab uspe Trade Manager ka trigger lagana ho.">🔄 Sync from
             Broker</button>
           <span id="sync-broker-result" style="font-size:11px;color:#8b949e"></span>
           <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️
@@ -3910,6 +3910,7 @@
   <script src="/static/js/app-14-bs-shadow.js"></script>
   <script src="/static/js/app-15-mobile.js"></script>
   <script src="/static/js/app-16-telegram.js"></script>
+  <script src="/static/js/app-17-trade-manager.js"></script>
   <script defer src="/static/js/mobile-tools.js"></script>
   <div id="edit-strat-modal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">

@@ -1,0 +1,24 @@
+<meta charset="utf-8">
+<!-- Trade Manager panel harness — asli static/js/app-17-trade-manager.js load karta hai,
+     fetch stubbed (koi live call nahi). Chalao:
+       python _DEV/mockups/tm_harness_serve.py
+       -> http://127.0.0.1:8791/_DEV/mockups/tm_harness.html -->
+<body style="background:#0d1117;font-family:system-ui">
+<div id="tm-panel-G1" style="display:none"></div>
+<pre id="log" style="color:#e6edf3;font-size:12px"></pre>
+<script>
+window.__sent = null; window.__errs = [];
+window.onerror = (m)=>window.__errs.push(String(m));
+window.fetch = async (url, opt) => {
+  if (String(url).indexOf('/api/position-exit-rule') === 0 && (!opt || opt.method === undefined))
+    return { json: async () => ({ ok:true, rule:null }) };
+  if (String(url).indexOf('/api/position-greeks') === 0)
+    return { json: async () => ({ ok:true, net_delta:-79.95, spot:25427.1, spot_entry:25412 }) };
+  if (opt && opt.method === 'POST') { window.__sent = JSON.parse(opt.body);
+    return { json: async () => ({ ok:true, levels:[{src:'ip',side:'target',level:25462},{src:'ip',side:'sl',level:25387}] }) }; }
+  if (opt && opt.method === 'DELETE') return { json: async () => ({ ok:true }) };
+  return { json: async () => ({}) };
+};
+</script>
+<script src="/static/js/app-17-trade-manager.js"></script>
+</body>
