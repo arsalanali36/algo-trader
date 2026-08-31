@@ -1,6 +1,6 @@
 {
  "slug": "bnf_strangle_hedged",
- "design": "bnf_strangle_hedged",
+ "design": "[NOT PROVEN - see real_cost.note] bnf_strangle_hedged",
  "title": "02.10.01 - BNF Hedged Strangle (POSITIONAL, 1-night, REAL-lake, 5 lots)",
  "tf": "positional",
  "params": {
@@ -44,7 +44,7 @@
  "deploy_key": "bnf_strangle_hedged",
  "deployed": "bnf_strangle_hedged",
  "real_cost": {
-  "method": "REAL OptChainLake premium (shorts) + BS wings + date-aware Zerodha charges + DOM slip, 5 lots",
-  "note": "Positional max_hold=1 vs intraday: +44% net, less tax. Rs4k SL overnight-gap breach ~3x/5yr (worst -Rs10.4k, wing-BOUNDED). Sharpe>4 = seller red-flag; forward-paper."
+  "method": "CONTAMINATED - BS wings + lake shorts that leave the +-10 offset window mid-hold and get priced at INTRINSIC (TRAP #198)",
+  "note": "DO NOT TRUST. 167/874 trades (19.1%) held a strike that drifted outside the lake's ATM-relative +-10 window; base._px() then returns intrinsic value, so an OTM short is 'bought back' for 0. Those trades win 88.0% (avg +Rs24,211) vs 48.2% (avg +Rs1,423) for clean ones and carry 80.1% of the reported Rs50.5L net. Clean-only net is Rs10.1L, and that subset is itself biased (it is the low-movement days). Wings cannot be made real either: they sit at offset 11, outside the lake. Needs a wider lake before any re-run."
  }
 }

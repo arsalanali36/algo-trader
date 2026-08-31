@@ -5111,3 +5111,82 @@ Wajah: shorts REAL lake premium hain par **wings Black-Scholes** hain jinka `sig
 pe freeze ho jaata hai — vol phatne pe real wing bachata hai, BS wing nahi. Yaani tail
 model **pessimistic** hai, par **bharosemand kisi bhi taraf nahi**. "Defined risk" ka
 daawa is run se **prove nahi hota**. Real wing premium se re-run pending.
+
+---
+
+## TRAP #198 — ATM-relative lake + fixed strikes: 80% of a run's profit was a short leg "bought back for free" (2026-08-31, LIVE run, user-directed)
+
+**Kaam kya tha:** user ne bola *"wings real premium se backtest karo"* (BS ban ho chuka tha,
+TRAP #197 + [[feedback_no_blackscholes_backtest]]). Wings BS kyun the, wahi jaanchne me
+usse **badi** cheez nikli.
+
+### 1. Wings real ho hi nahi sakte
+
+Lake `_TRADING_DATA/OptChainLake_1m/BANKNIFTY/MONTH/` me sirf **offset −10..+10** hain
+(`CE_ATMp10.csv` … `PE_ATMm10.csv`). 02.10.01 ke wings **offset ±11** pe hain. Isiliye
+original author ne BS use kiya. Ye likha kahin nahi tha.
+
+### 2. Asli bimari: lake ATM-RELATIVE hai, trade FIXED-STRIKE hai
+
+`bnf_920_strangle_intraday._px(g, i, side, K)`:
+```python
+off = int(round((K - g["ATMK"][i]) / STEP))
+if -10 <= off <= 10: ...return lake value
+return max(0.0, (S - K) if side == "CE" else (K - S))   # <-- CHUPCHAAP INTRINSIC
+```
+Strike entry pe fix hota hai, par **ATM har bar badalta hai**. Position overnight hold
+hoti hai → wahi strike offset 11, 12 pe chala jaata hai → lake se bahar → `_px`
+**intrinsic** de deta hai. OTM ke liye intrinsic = **0**.
+
+Live debug (2026-04-06, worst trade):
+```
+ENTRY  ATM 51400   PE wing @50700   wPE = 1273.95     (offset -7, sahi)
+09:36  ATM 51800   PE wing @50700   wPE =    0.00     (offset -11, NAKLI)
+       -> net_val phata -> basket -Rs1,67,000 -> turant SL
+```
+Structural max loss ₹6,562 tha. Backtest ne −₹1,79,374 dikhaya — **27 guna cap ke bahar**,
+aur kisi ne notice nahi kiya kyunki number "plausible" lagta hai.
+
+### 3. Aur yehi bimari PUBLISHED run me bhi thi — profit ke rukh me
+
+Shorts bhi usi `_px` se aate hain. Published BS-wing run (874 trades, ₹50.5L, Sharpe 3.99
+— jo **isi din** TRAP #197 fix karke deploy hua tha):
+
+| | trades | net | avg | win% | worst |
+|---|---|---|---|---|---|
+| **contaminated** | **167 (19.1%)** | **₹40,43,282** | **+₹24,211** | **88.0%** | −38,253 |
+| clean | 707 | ₹10,05,777 | +₹1,423 | 48.2% | −51,383 |
+| published total | 874 | ₹50,49,059 | +₹5,777 | 55.8% | −51,383 |
+
+**19% trades me 80% profit. Unka win rate 88% vs clean ka 48%.**
+
+Mechanism saaf hai: short OTM strike lake se bahar jaate hi **0** ho jaata hai = "muft me
+buy-back" = guaranteed jeet. Bias **hamesha profit ki taraf**, kyunki bahar hamesha OTM
+side pe jaata hai. Clean subset (₹10.1L) bhi jawab nahi — wo **kam-movement wale din** ka
+biased subsample hai.
+
+### Sabak
+1. **ATM-relative lake se fixed-strike positional strategy backtest mat karo** jab tak
+   strike ki poori zindagi window ke andar na ho. Intraday me drift chhoti hai, overnight
+   me nahi. 02.10.01 ke shorts ±6 pe the — "surakshit" lagte the — phir bhi 19% nikle.
+2. **Missing data pe kabhi silent fallback mat do.** `max(0, S-K)` ek *maana hua* daam hai
+   jo asli jaisa dikhta hai. Sahi jawab `None` hai + caller trade **skip** kare.
+   `scratch/strangle_roll/engine.py::_prem()` yahi karta hai (`return None, None` +
+   `if None in (...): skip`) — isiliye **02.17 weekly iron-fly (ASLI PAISA) surakshit hai**.
+   Ek hi repo, do lake reader, ek sach bolta hai ek nahi.
+3. **Fallback rate PER-TRADE naapo, per-call nahi.** Mera pehla metric per-call tha
+   (0.29% = "TRUSTWORTHY") jabki wahi run **70% trades pe contaminated** tha — ek hi
+   corrupt bar poora trade maar deta hai. Galat unit = jhoothi tasalli.
+4. **Aur mera hi over-count:** pehle maine 48.7% bataya kyunki scan trade ke **exit ke
+   baad** tak ja raha tha. Sahi 19.1% hai. Naapne ka window utna hi zaroori hai jitna naap.
+
+### Structural guard
+`build_bnf_positional_run.py` → `_assert_lake_coverage(df, max_pct=5.0)`. `run_positional`
+har trade pe `oob` flag likhta hai (sirf **lake se priced** legs pe — BS wings ginti nahi).
+>5% contaminated ho to run **publish hi nahi hota**. Published config pe abhi 19.1% pe
+**block** hota hai — verified. `_assert_lot_scale` (TRAP #197) ke saath chalta hai.
+
+### Status
+02.10.01 ka run page **NOT PROVEN** mark ho gaya (`meta.json`), strategy PAPER pe hai,
+koi live paisa nahi. **Lake chaudi kiye bina koi re-run nahi** — `optchain_dl.py` ko
+±20 offset tak dobara chalana padega.

@@ -118,12 +118,24 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
 
 
 def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5,
-                   max_hold_days=3, exp_squareoff_days=2, slip_mult=1.0):
+                   max_hold_days=3, exp_squareoff_days=2, slip_mult=1.0,
+                   real_wings=False):
     """HEDGED strangle held ACROSS days (positional). Enter first bar>=09:20; hold
     forward across trading days until basket target/SL, OR (expiry-exp_squareoff_days)
     squareoff, OR max_hold_days. Wings BS-priced with per-bar T (days decay). Downside
     is wing-capped every leg. No re-entry while a position is open."""
     bs.SLIP_MULT = slip_mult
+    if real_wings and abs(off + wing) > 10:
+        raise ValueError(
+            "real_wings needs the wing strike inside the lake's -10..+10 offsets, but "
+            "off+wing=%d. base._px() would silently return INTRINSIC value there and the "
+            "run would look real while being fiction. Use wing<=%d, or move `off` in."
+            % (off + wing, 10 - off))
+
+    def _wing_px(i, ot, K, S, T, sigma):
+        """REAL traded premium from the lake, or Black-Scholes (legacy)."""
+        return base._px(g, i, ot, K) if real_wings else _bs_wing(S, K, T, sigma, ot)
+
     DAY, TT, DT, SPOT = g["DAY"], g["TT"], g["DT"], g["SPOT"]
     n = len(DT)
     day_first920, last_bar = {}, {}
@@ -153,7 +165,7 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
         S0 = SPOT[e]
         strad = base._px(g, e, "CE", atmk) + base._px(g, e, "PE", atmk)
         sigma = strad / (0.8 * S0 * math.sqrt(T0)) if (strad > 0 and S0 > 0) else 0.0
-        wce = _bs_wing(S0, kc_w, T0, sigma, "CE"); wpe = _bs_wing(S0, kp_w, T0, sigma, "PE")
+        wce = _wing_px(e, "CE", kc_w, S0, T0, sigma); wpe = _wing_px(e, "PE", kp_w, S0, T0, sigma)
         entry_credit = (sce + spe) - (wce + wpe)
         lot = base.lot_for(d0); qty = lots * lot
         # deadline day = min(expiry-squareoff, entry + max_hold_days trading days)
@@ -170,7 +182,7 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
             Ti = max((exp - di).days, 1) / 365.0
             Si = SPOT[i]
             sc = base._px(g, i, "CE", kc_s); sp = base._px(g, i, "PE", kp_s)
-            wc = _bs_wing(Si, kc_w, Ti, sigma, "CE"); wp = _bs_wing(Si, kp_w, Ti, sigma, "PE")
+            wc = _wing_px(i, "CE", kc_w, Si, Ti, sigma); wp = _wing_px(i, "PE", kp_w, Si, Ti, sigma)
             net_val = (sc + sp) - (wc + wp)
             basket = (entry_credit - net_val) * qty
             if basket <= -abs(basket_sl):
@@ -181,7 +193,7 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
             x = last_bar[deadline_day]
         Sx = SPOT[x]; Tx = max((exp - DAY[x]).days, 1) / 365.0
         xsce, xspe = base._px(g, x, "CE", kc_s), base._px(g, x, "PE", kp_s)
-        xwce = _bs_wing(Sx, kc_w, Tx, sigma, "CE"); xwpe = _bs_wing(Sx, kp_w, Tx, sigma, "PE")
+        xwce = _wing_px(x, "CE", kc_w, Sx, Tx, sigma); xwpe = _wing_px(x, "PE", kp_w, Sx, Tx, sigma)
         when = pd.Timestamp(DT[e])
         gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * qty
         fee = (bs.calc_charges(sce, xsce, qty, "SELL", when) + bs.calc_charges(spe, xspe, qty, "SELL", when) +
@@ -189,7 +201,19 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
         slip = (bs.slip_cost_leg(sce, xsce, qty) + bs.slip_cost_leg(spe, xspe, qty) +
                 bs.slip_cost_leg(wce, xwce, qty) + bs.slip_cost_leg(wpe, xwpe, qty))
         cap = (wing * STEP - entry_credit) * qty       # structural max loss (wing-defined)
-        rows.append(dict(day=d0, exit_day=DAY[x], hold=(pd.Timestamp(DT[x]) - when).days,
+        # DATA INTEGRITY: the lake is ATM-RELATIVE (offsets -10..+10). A leg's strike is
+        # fixed at entry but ATM drifts while we hold, so a strike can walk out of the
+        # lake mid-trade -- and base._px() then SILENTLY returns intrinsic (0 for OTM),
+        # i.e. a free short or a worthless hedge. Flag it; the run builder refuses to
+        # publish a contaminated run. (2026-08-31, TRAP #198)
+        _atm_span = g["ATMK"][e:x + 1]
+        # only the legs actually priced FROM the lake can be corrupted by it: shorts
+        # always, wings only when real_wings=True (BS prices any strike).
+        _lake_legs = [kc_s, kp_s] + ([kc_w, kp_w] if real_wings else [])
+        _oob = any(bool((np.abs(np.round((K - _atm_span) / STEP)) > 10).any())
+                   for K in _lake_legs)
+        rows.append(dict(oob=_oob,
+                         day=d0, exit_day=DAY[x], hold=(pd.Timestamp(DT[x]) - when).days,
                          net=gross - fee - slip, gross=gross, fee=fee, slip=slip, reason=reason,
                          entry_credit=entry_credit, qty=qty, maxloss_cap=cap,
                          spot0=float(S0), atm=float(atmk)))

@@ -38,7 +38,26 @@ def _assert_lot_scale(df, sl):
             f"Do NOT publish this run -- see LESSONS #197.")
 
 
+def _assert_lake_coverage(df, max_pct=5.0):
+    """GUARD (TRAP #198). The premium lake is indexed by offset from the CURRENT bar's
+    ATM (-10..+10). A trade holds FIXED strikes, so when ATM drifts the strike walks out
+    of the lake and base._px() silently substitutes intrinsic value -- a short bought
+    back for free, or a hedge worth nothing. The numbers stay plausible and the run looks
+    real. 02.10.01's published run had 48.7% of trades contaminated, carrying 70% of its
+    reported net. Refuse to publish rather than ship a number nobody can trust."""
+    if "oob" not in df.columns or df.empty:
+        return
+    pct = 100.0 * df["oob"].mean()
+    if pct > max_pct:
+        raise AssertionError(
+            "LAKE COVERAGE: %.1f%% of trades have a leg that left the lake's +-10 offset "
+            "window mid-hold and was priced at INTRINSIC, not at a traded premium. "
+            "Do NOT publish -- widen the lake or move the strikes in. See TRAP #198."
+            % pct)
+
+
 _assert_lot_scale(df, BASKET_SL)
+_assert_lake_coverage(df)
 rows = [dict(date=str(r["day"]), exit_date=str(r["exit_day"]), net=float(r["net"]), gross=float(r["gross"]),
              charges=float(r["fee"] + r["slip"]), entry_credit=float(r["entry_credit"]),
              spot0=float(r["spot0"]), atm=float(r["atm"]), qty=int(r["qty"]), reason=str(r["reason"]))
