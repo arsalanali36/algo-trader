@@ -89,7 +89,7 @@ def _snap(p):
     return round(round(p / TICK) * TICK, 2)
 
 
-def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
+def marketable_price(side, sec_id, seg, broker, buffer_bps=10, log=None):
     """Return (price, src). BUY=ask*(1+buf), SELL=bid*(1-buf); fallback LTP±buf.
     buffer_bps crosses the spread a touch so the limit fills immediately."""
     # max_age is NOT optional here: this is the price the real order gets placed
@@ -131,6 +131,19 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
         return None, "none"
 
     price = ref * (1 + buf) if side == "BUY" else ref * (1 - buf)
+    if log:
+        # DIAGNOSTIC ONLY (2026-08-31, TRAP #197 follow-up). Proves whether the first
+        # limit was priced off real depth (src=ask/bid) or off a last-trade fallback
+        # (src=*ltp). A BUY priced off LTP sits at/below the bid -> no fill -> chase.
+        # Nothing here changes the price or the return value.
+        try:
+            _sp = (ask - bid) if (bid and ask) else None
+            log("[PX] %s %s bid=%s ask=%s ltp=%s spread=%s src=%s buf=%dbps -> limit %.2f"
+                % (sec_id, side, bid, ask, ltp,
+                   ("%.2f" % _sp) if _sp is not None else "n/a",
+                   src, buffer_bps, _snap(price)))
+        except Exception:
+            pass
     return _snap(price), src
 
 
@@ -187,7 +200,8 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                 pass
             return {"ok": False, "reason": "no_symbol"}
 
-    price, src = marketable_price(side, sec_id, seg, broker, buffer_bps)
+    price, src = marketable_price(side, sec_id, seg, broker, buffer_bps, log=log)
+    _first_limit = price   # diagnostic only: baseline for chase drift below
     if price is None:
         log(f"[SKIP] {side} {trad_sym} — no price (feed+REST empty)")
         return {"ok": False, "reason": "no_price"}
@@ -322,10 +336,19 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             # harder without risking a flat reject). Entries keep the same
             # buffer_bps every round — unchanged, deliberately conservative.
             round_buffer = min(buffer_bps * (2 ** chase_round), 150) if is_exit else buffer_bps
-            new_price, new_src = marketable_price(side, sec_id, seg, broker, round_buffer)
+            new_price, new_src = marketable_price(side, sec_id, seg, broker, round_buffer, log=log)
             if new_price is None:
                 log(f"[CHASE] {trad_sym} — no fresh price available, stopping chase")
                 break
+            try:   # DIAGNOSTIC ONLY - how far did the limit walk vs the first one
+                _d = new_price - _first_limit
+                log("[PX-CHASE] %s %s round %d - first limit %.2f -> now %.2f "
+                    "(drift %+.2f, %+.2f%%) src %s->%s"
+                    % (trad_sym, side, chase_round, _first_limit, new_price, _d,
+                       (_d / _first_limit * 100.0) if _first_limit else 0.0,
+                       src, new_src))
+            except Exception:
+                pass
             price, src = new_price, new_src
             r = broker.place_order(side, sec_id, seg, qty, "LIMIT", price,
                                    trad_sym=trad_sym, tag=f"{tag}_{sym}",
