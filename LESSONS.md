@@ -5425,3 +5425,65 @@ jabki keys `st["keys"]` me hain. Aaj ka doosra "check ne galat jagah dekha".)*
    badge (`meta.json` vs `results.js`) aur telegram push-state ka nesting.
 3. **Naapne ka paimana wo chuno jo bina lookup ke sach rahe** — `qty` per-unit deta hai;
    `lot_size` ek lookup hai, aur lookup jhooth bol sakta hai.
+
+---
+
+## TRAP #203 — Alert-whitelist "set karke bhool gaye": 3 purani strategies pin, LIVE ek bhi nahi (2026-09-01, user-reported)
+
+**Lakshan:** 04.03.02 (`chainzone_v1`, **LIVE, asli paisa**) ki 11:40 ki entry ka Telegram
+message aaya hi nahi. User ka pehla anumaan: "modal ki list me ye strategy hai hi nahi."
+
+**Do alag baatein nikleen — aur user ka anumaan sirf aadha sahi tha:**
+
+1. **List me thi.** `chainzone_v1` LIVE hai, isliye sort me **sabse upar**. User ka
+   screenshot list ke **aakhri 7** items ka tha (scroll neeche tha). Yani jis cheez
+   ko "missing" samjha gaya, wo bas nazar se bahar thi.
+
+2. **Asli qatil = `notify_strategies` whitelist.** `data/telegram_config.json`
+   (last edit **19 Aug**) me:
+   ```
+   "notify_strategies": ["straddle_alert_hedged", "bnf_strangle_hedged", "range_hedged"]
+   ```
+   Ye field **khaali = sab**, bhari = **sirf yehi**. Ye 15-Aug ke live-rollout ke waqt
+   pin ki gayi thi. Uske baad wale 2 hafte me `straddle_alert_hedged` aur `range_hedged`
+   **off** ho gayin, aur jo naya LIVE hua (`chainzone_v1`, `weekly_ironfly_v1`) wo
+   kabhi add nahi hua. Natija: **poore system se practically zero trade-alert ja raha
+   tha** — aur channel me koi error nahi tha, kyunki filter ka kaam hi chup rehna hai.
+
+**Ye class:** *"ek baar allowlist bhar do, phir duniya badal jaati hai."* Allowlist
+**strategy-id se pin** thi (identity), jabki asli iraada **"jo bhi asli paisa lagata
+hai"** (property) tha. Property badalti rehti hai, pinned identity nahi — wahi
+ADR-007 wala sabak, alag jagah.
+
+**Fix:** `notify_modes: ["live"]` + `notify_strategies: []`. Ab whitelist "kaun"
+nahi, **"kaunsa mode"** se banti hai → koi bhi strategy LIVE hote hi apne-aap
+covered, aur paper spam bhi nahi.
+
+**Saath me do aur cheezein pakdi gayin:**
+
+- **02.17 Weekly Iron-Fly (`weekly_ironfly_v1`, REAL MONEY) picker me thi hi nahi.**
+  `/api/telegram/config` ki strategy-list sirf **top-level `active` key** wali config
+  entries deti thi. 02.17 ka config `_weekly_ironfly` **block** ke andar hai (koi
+  top-level `active` nahi) → list se bahar → **UI se iska alert on karna namumkin
+  tha**. Ye wahi gap tha jo straddle/strangle families ke liye pehle inject karke
+  bhara gaya tha, par block-config wali iron-fly families ke liye kabhi nahi. Ab
+  `_weekly_ironfly` + `_m_pattern_ironfly` bhi inject hoti hain (`enabled` = unka
+  apna on/off, mode block se). **Sabak: jab bhi ek "sab strategies" list banao,
+  uska source config ka *shape* hota hai, strategy ka *astitva* nahi — aur block-config
+  wali strategies har aisi list se chup-chaap gayab ho jaati hain.**
+
+- **Modal ka Save ek footgun tha:** `_collect()` hamesha `notify_modes: ['live','paper']`
+  bhejta tha. Whitelist khaali (= "sab") ke saath iska matlab **25+ paper strategies
+  ka spam** — yani theek kiya hua config UI se ek baar Save dabate hi bigad jaata.
+  Ab: kuch na chuna = sirf LIVE; koi strategy chuni = dono mode (taaki chuni hui
+  paper strategy bhi alert kare). Modal ka hint text bhi ab wahi kehta hai jo code
+  karta hai.
+
+**Dobara kaise nahi hogi:** filter ab **mode-based** hai, id-based nahi — naya LIVE
+strategy apne-aap alert karega, kisi ko yaad rakhne ki zaroorat nahi. Aur picker ki
+list ab config ke dono shapes (top-level `active` + `_block.enabled`) padhti hai,
+isliye agli block-config strategy bhi list me aayegi.
+
+**Khula (jaan-boojh ke):** 11.01 Delta Iron-Fly `send_raw()` use karta hai — wo
+whitelist/mode filter se guzarta hi nahi (crypto ka apna order-path hai, ADR-021).
+Uske message pehle bhi aa rahe the aur ab bhi aayenge; ise unify karna alag kaam hai.
