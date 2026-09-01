@@ -83,10 +83,10 @@
       notify_exits: document.getElementById('tg-ev-exit').checked,
       notify_blocked: document.getElementById('tg-ev-blocked').checked,
       notify_strategies: picked,
-      // mode filter: agar specific strategies chuni hain to mode-filter loose
-      // rakho (unhi ki id se match hoga); warna default live+paper dono allow
-      // taaki chuni hui paper strategy bhi alert kare.
-      notify_modes: ['live', 'paper']
+      // mode filter: koi strategy chuni hai to mode-filter loose rakho (unhi ki id
+      // se match hoga, chahe paper ho). Kuch NA chuna = "sab" — us case me sirf
+      // LIVE, warna 25+ paper strategies phone ko wallpaper bana deti hain.
+      notify_modes: picked.length ? ['live', 'paper'] : ['live']
     };
     var tok = (document.getElementById('tg-token').value || '').trim();
     if (tok) body.bot_token = tok;   // sirf naya token type kiya to bhejo

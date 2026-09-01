@@ -1351,6 +1351,21 @@ def api_telegram_config():
                             except Exception:
                                 _lbl = _sid
                             strategies.append({"id": _sid, "label": _lbl, "mode": "paper"})
+                # Block-config strategies (02.17 weekly iron-fly = REAL MONEY, m-pattern):
+                # inke paas top-level `active` key hai hi nahi (config apne `_block` ke andar
+                # rehta hai) — isliye upar wala loop inhe chhod deta tha aur ye picker me
+                # kabhi dikhti hi nahi thin => UI se inka alert on karna NAMUMKIN tha.
+                # `enabled` inka apna on/off hai; mode block se hi lo (live/paper).
+                for _blk, _sid in (('_weekly_ironfly', 'weekly_ironfly_v1'),
+                                   ('_m_pattern_ironfly', 'm_pattern_ironfly_v1')):
+                    _b = raw.get(_blk)
+                    if isinstance(_b, dict) and _b.get('enabled'):
+                        try:
+                            _lbl = sr.label(_sid, with_name=True)
+                        except Exception:
+                            _lbl = _sid
+                        strategies.append({"id": _sid, "label": _lbl,
+                                           "mode": _b.get('mode', 'paper')})
                 strategies.sort(key=lambda s: (s['mode'] != 'live', s['label']))
             except Exception as e:
                 print("[telegram] strategy list fail:", e, flush=True)
