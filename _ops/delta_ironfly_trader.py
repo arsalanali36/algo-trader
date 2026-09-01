@@ -3,7 +3,20 @@ delta_ironfly_trader.py — Delta Exchange India daily BTC Iron-Fly (PAPER, forw
 
 Phase-3 Step-2. Validated in Phase-2: SELL ATM CE+PE + BUY ~2000-pt wings (defined
 risk), enter ~12h before the 12:00 UTC daily expiry (00:00 UTC / 05:30 IST), hold to
-CASH-SETTLEMENT at 12:00 UTC. Significant + slippage-proof on 127 expiries.
+CASH-SETTLEMENT at 12:00 UTC.
+
+!! BACKTEST CAVEAT (2026-08-29, LESSONS TRAP #190) -- the code in THIS file is correct;
+   the study that justified it was not. backtest_delta.py's build(ref_h=6) picked the ATM
+   strike from spot 6h AFTER entry (entry 05:30 IST, strike from 11:30 IST) = lookahead.
+   That one line was the entire edge: same script, fixed, deployed H=12 goes
+   +344.3/trade Sharpe 9.81 -> -54.7/trade Sharpe -1.31 (500d); every entry time turns
+   negative. Corrected full audit: -152.6/trade, Sharpe -4.50, p=1.000. A direct VRP
+   measurement finds no vol premium on BTC at all (weekly -100, daily -10 on the true
+   200-pt strike grid). The earlier "significant + slippage-proof on 127 expiries" claim
+   is WITHDRAWN -- slippage-robustness was a symptom of the bias, not evidence.
+   Kept running by user decision; short-run profit at ~55% win rate is not evidence.
+   Do NOT size up or move to real money on those stats.
+   Detail: scratch/delta_weekly_fly/README.md
 
 24/7 market -> this does NOT go through execute_signal (which blocks weekends / uses
 Dhan-Kite lots). Standalone, isolated, PAPER HARD-LOCK (no real order path at all here).
@@ -336,15 +349,61 @@ def _testnet_ironfly(broker, underlying, wing):
             "legs": legs}
 
 
+def _fill_of(r):
+    """A leg counts as OPEN only if the broker actually FILLED it.
+
+    TRAP #202: Delta returns state="cancelled" + unfilled_size=N + reason
+    "order_size_not_available_in_orderbook" when the book is too thin for a MARKET
+    order. That is NOT the literal string "rejected", so a `status == "rejected"`
+    guard lets an unfilled leg through, `placed` stops meaning "held", and the
+    wings-first ordering that makes this structure defined-risk is silently void.
+    Only a real fill price counts. Returns (fill_price, reason_if_not_filled)."""
+    stt = str((r or {}).get("status") or "").lower()
+    fill = (r or {}).get("fill_price")
+    raw = ((r or {}).get("raw") or {}).get("result") or {}
+    if fill is None:
+        why = raw.get("cancellation_reason") or (r or {}).get("reason") or ""
+        return None, ("state=%s unfilled=%s %s"
+                      % (stt or "?", raw.get("unfilled_size", "?"), why)).strip()
+    if stt in ("cancelled", "canceled", "rejected"):
+        return None, "state=%s" % stt
+    try:
+        if float(raw.get("unfilled_size") or 0) > 0:
+            return None, "partial fill, unfilled=%s" % raw.get("unfilled_size")
+    except (TypeError, ValueError):
+        pass
+    return fill, ""
+
+
 def _unwind_testnet(broker, placed, lots, log):
-    """Close whatever legs were already filled (opposite market orders)."""
+    """Close legs we ACTUALLY hold (opposite market orders), then report failures.
+
+    Only ever unwinds a leg with a real entry_fill: sending an opposite order for a
+    leg that never filled would OPEN a new inverted position, not close anything.
+    Any leg still held after the attempt is a LOUD alarm - a half-unwound fly is
+    exactly the naked shape this path exists to prevent."""
+    stuck = []
     for lg in placed:
+        if lg.get("entry_fill") is None:
+            continue                      # never opened -> nothing to close
         opp = "SELL" if lg["side"] == "BUY" else "BUY"
         try:
-            broker.place_order(opp, lg["symbol"], qty=lots, order_type="MARKET")
-            log(f"[delta-fly] unwound {lg['symbol']}")
+            r = broker.place_order(opp, lg["symbol"], qty=lots, order_type="MARKET")
+            f, why = _fill_of(r)
+            if f is None:
+                stuck.append("%s (%s)" % (lg["symbol"], why))
+                log(f"[delta-fly] unwind NOT FILLED {lg['symbol']}: {why}")
+            else:
+                log(f"[delta-fly] unwound {lg['symbol']} @ {f}")
         except Exception as e:
+            stuck.append("%s (%s)" % (lg["symbol"], e))
             log(f"[delta-fly] unwind FAIL {lg['symbol']}: {e}")
+    if stuck:
+        log("[delta-fly] UNWIND INCOMPLETE - still exposed: " + "; ".join(stuck))
+        _tg("\U0001f534 <b>Delta Iron-Fly - UNWIND INCOMPLETE</b>\n"
+            "Entry aborted but these legs could NOT be closed (still open at Delta):\n"
+            + "\n".join(stuck) + "\nManual check needed.")
+    return stuck
 
 
 def _reconcile_testnet(broker, pos, log):
@@ -377,12 +436,19 @@ def enter_testnet(cfg, st, now_utc, log=print):
     placed = []
     for side, sym, cp, strike in setup["legs"]:
         r = b.place_order(side, sym, qty=lots, order_type="MARKET")
-        if r.get("status") == "rejected":
-            log(f"[delta-fly] leg REJECTED {side} {sym}: {r.get('reason')} — unwinding")
+        fill, why = _fill_of(r)
+        if fill is None:
+            # NOT filled (rejected OR cancelled-for-no-depth OR partial). Abort the
+            # whole structure - a partial iron-fly is a naked short, not a position.
+            log(f"[delta-fly] leg NOT FILLED {side} {sym}: {why} - aborting + unwinding")
+            held = len([l for l in placed if l.get("entry_fill") is not None])
             _unwind_testnet(b, placed, lots, log)
+            _tg("\U0001f534 <b>Delta Iron-Fly - ENTRY ABORTED</b>\n"
+                "leg %s %s not filled (%s)\n"
+                "%d filled leg(s) unwound - no position taken." % (side, sym, why, held))
             return st
         placed.append({"cp": cp, "strike": strike, "side": side, "symbol": sym,
-                       "entry_fill": r.get("fill_price"), "order_id": r.get("order_id")})
+                       "entry_fill": fill, "order_id": r.get("order_id")})
     cv = CONTRACT_VALUE.get(cfg["underlying"], 0.001)
     credit = sum((l["entry_fill"] or 0) for l in placed if l["side"] == "SELL") \
         - sum((l["entry_fill"] or 0) for l in placed if l["side"] == "BUY")
@@ -393,6 +459,15 @@ def enter_testnet(cfg, st, now_utc, log=print):
            "net_credit_pts": credit, "entry_time": now_utc.isoformat(),
            "mode": "testnet", "group_id": group_id}
     pos["reconcile"] = _reconcile_testnet(b, pos, log)
+    if pos["reconcile"] != "match":
+        # Broker disagrees with what we think we hold. Reconcile is a GATE, not a
+        # footnote: unwind and take no position rather than run a structure whose
+        # real shape we cannot confirm.
+        log("[delta-fly] reconcile MISMATCH at entry - unwinding, no position")
+        _unwind_testnet(b, placed, lots, log)
+        _tg("\U0001f534 <b>Delta Iron-Fly - ENTRY ABORTED (reconcile)</b>\n"
+            "%s\nLegs unwound - no position taken." % pos["reconcile"])
+        return st
     st["open"] = pos
     st["last_entry_day"] = now_utc.date().isoformat()
     _save(st)
@@ -505,6 +580,8 @@ def reconcile_liquidations(cfg, st, now_utc, log=print):
     for lg in pos["legs"]:
         if lg.get("exit_fill") is not None:
             continue   # already closed/recorded
+        if lg.get("entry_fill") is None:
+            continue   # never opened -> absent at broker is correct, not a liquidation
         held = abs(live.get(lg["symbol"], 0) or 0)
         if held == 0:
             opp = "buy" if lg["side"] == "SELL" else "sell"
