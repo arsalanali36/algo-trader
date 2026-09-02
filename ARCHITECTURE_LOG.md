@@ -15,6 +15,21 @@
 
 ---
 
+## 2026-09-02 (eve) — 🎯 Level Slots follow-ups: chart v2, disk-first history, Telegram, Projection, Delta TESTNET, trend-line, watchlists
+**Status:** DONE (sab VPS-live; commits `8ee6d74`→`02a3273`; har deploy positions/PIDs diff EMPTY)
+**Kya (user ke live feedback pe, ek shaam me 12 commits):**
+1. Chart: poll pe rebuild nahi (persistent host, `fitContent` sirf slot/tf/days change pe) · 1d/5d/10d/30d history · ＋ Line (click → horizontal line, → Key level) · ⛶ fullscreen (Esc) · ⟲ reset + Alt+R (`priceScale autoScale:true` — drag ke baad autoScale off rehta tha = "BTC ke baad RELIANCE squeezed").
+2. **History disk-first** (user: "purana data hamare paas hai, poll kyun") — `_TRADING_DATA/Index/NIFTY` + `Equity/<SYM>` 1-min lake, Dhan sirf aaj (BANKNIFTY ka per-day lake nahi → Dhan fallback).
+3. **TRAP #206** — Dhan IDX_I 1-min series 15:29 pe khatam hoke ek synthetic 18:41 bar (O=H=L=C = closing value) deta hai → `_in_nse_session` filter.
+4. SL/Target lines ARM se pehle (level se projected) · Telegram ENTRY/EXIT (points + ₹, NSE exit = group flat → ledger completed rows; `send_raw`) · valid-till date+time picker.
+5. **Projection** block: `_resolve_nse_structure()` ek resolver fire + preview dono ke liye (Rule 6B) → legs strike/LTP/Δ (IV back-solve), net Δ → ₹/index-pt, credit, **real hedged margin** (`risk_gate.margin_breakdown`), ₹ per exit line; phir **bid/ask** per leg (`dhan_feed` same store jo smart_order use karta) → expected fills + spread cost.
+6. **BTC → Delta TESTNET real orders**: audit ne mera direct `place_order` block kiya (sahi) → helpers `delta_ironfly_trader.testnet_place_leg/testnet_close_held` (Delta order calls ka ek ghar) → wing BUY first, unfilled → unwind, reconcile gate; **live smoke: 1-lot fire → Delta positions {+1,−1} + app ledger 2 rows → flatten → Delta {} + 4 rows**, MTM ₹−4 (spread).
+7. **Trend-line level**: `trend:{t1,p1,t2,p2}` → `level_at(s,t)` = us candle ke time pe line ki value, zone ± usi ke around, wahi pattern → next-candle break flow (line khud order-line nahi).
+8. **Watchlists** (named, server-side): search-add F&O symbols, Open all as tabs, filter tabs.
+**Layer:** ui / data / execution (Delta testnet) · **Files:** `_ops/level_slots.py` `_ops/level_slots_live.py` `_ops/delta_ironfly_trader.py` (+2 helpers) `trader_dashboard.py` (routes: preview, watchlists, chart days) `templates/level_slots.html` `static/js/level_slots.js` `_DEV/mockups/level_slots_harness.html`
+**Khula:** NSE pehla asli paper fire market me (kal); BTC prem-slot nahi (Delta option candles nahi); watchlist sirf tabs manage karti hai.
+
+
 ## 2026-09-02 — 🎯 Level Spread Slots (`/level-slots`) — key-level → candle-pattern → next-candle break → delta-hedged credit spread
 **Status:** DONE (VPS deploy same session — see Update Log)
 **Kya:** Orders & P&L ▾ me naya page. Har underlying (NIFTY / BANKNIFTY / koi bhi F&O stock / BTC-Delta) ke 4 slot: 2 Index-level (spot) + 2 Premium-level (option price). User key level + zone ± + direction (neeche se aaye = resistance → Bear Call; upar se = support → Bull Put) + hedge delta + lots + TF + valid-till deta hai. Loop: closed candle zone me → engulf/hammer/inside pattern → AGLI candle pattern-candle ka low (CE sell) / high (PE sell) tode → BUY hedge wing (≈delta) PEHLE, phir SELL ATM → group pe Trade Manager exit rule (₹ combined / index pt / index price + wick/close/close+N confirm) arm. PAPER hard-lock v1.

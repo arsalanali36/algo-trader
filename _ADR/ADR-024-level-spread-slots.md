@@ -42,3 +42,18 @@ entry pattern, `execute_basket_exit`), but nothing joined them into a per-level 
   real-money crypto use.
 - − Going live needs: `MODE` change + user go + `strategy_registry` status flip + per-strategy
   RMS caps (currently global fallback like `manual_trigger`).
+
+## Amendments (same day, 2026-09-02 evening)
+- **Trend-line level** — `trend:{t1,p1,t2,p2}` makes the level a function of candle time (`level_at`).
+  Deliberately NOT an "order line": touching/breaking the line alone never fires — the same
+  zone → pattern → next-candle break flow applies. A direct-break mode can be added later as an
+  explicit option; it was not the user's stated rule.
+- **BTC on Delta TESTNET (real demo orders)** — when the demo key exists, entries/exits are real
+  testnet market orders (wing first, unfilled → unwind, reconcile gate, fills = marks). Order calls
+  stay inside `delta_ironfly_trader` (audit `RAW_ORDER_ALLOW`); this module only calls its helpers.
+  Sim fallback remains when no key. Decision 5 above still holds: BTC exits are this module's own
+  engine because Trade Manager cannot price Delta legs.
+- **History disk-first** — chart/watch history reads the on-disk 1-min lake for past days and asks
+  Dhan only for today. Rationale: the data already exists; polling it again is pure rate-budget waste.
+- **One resolver for fire + preview** (`_resolve_nse_structure`) — the Projection block must show
+  the strikes the fire path would actually pick; two resolvers would drift (TRAP #98 shape).

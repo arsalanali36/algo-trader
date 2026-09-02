@@ -5529,3 +5529,11 @@ Uske message pehle bhi aa rahe the aur ab bhi aayenge; ise unify karna alag kaam
 - "Skip" bhi ek decision hai — bina log ke skip = agla din "kyun nahi chala" ka koi saboot nahi. Har `continue` jo entry rokta hai, ek line log kare.
 - Expiry-settled positions ko state me `open` rakhna cycle-based strategies (day-after-expiry entry) ko **poore hafte** ke liye block karta hai; past-expiry = auto-retire, orders nahi.
 - 02-Sep ka 09:20 entry miss ho gaya — 14:xx pe manual fire **nahi** kiya (Rule 10: backtest entry 09:20 hai). Agla cycle Wed 09-Sep.
+
+
+## TRAP #206 — Dhan IDX_I 1-min series ke END me ek SYNTHETIC post-close bar (18:41, O=H=L=C = closing value) (2026-09-02, level-slots chart)
+**Symptom:** naye level-slots chart pe aakhri candle "18:40" pe dikhi jabki NIFTY 15:30 pe band — pehla shak offset bug tha.
+**Sach (raw probe):** `intraday_candles("13","IDX_I","INDEX")` → `09:15 … 15:28, 15:29, 18:41` — pehli bar 09:15 exact hai (offset sahi), aakhri bar 18:41 pe **O=H=L=C = official close** (Dhan ka closing-value tick). Options (OPTIDX) series me ye bar nahi dikhi.
+**Kyun khatarnak:** ek closed-candle state machine (pattern / break / Trade Manager candle-close confirm) is bar ko "asli 18:41 candle" maan sakti hai — zone touch / break / close-beyond sab is synthetic bar se ho sakta hai, market band hone ke baad.
+**Guard:** `level_slots_live._in_nse_session(t)` — NSE bars sirf 09:15 ≤ IST < 15:30. **Reuse rule:** koi bhi index intraday consumer jo "last closed bar" padhta hai (`_last_closed_candle_close`, Trade Manager confirm, EOD replay) ko yahi session-filter chahiye — market-hours gate loop pe hai to wo bhi bachata hai, par data-level filter zyada safe.
+**Fast-detect:** `df.time.iloc[-1]` ka wall-clock > 15:30 with O==H==L==C.
