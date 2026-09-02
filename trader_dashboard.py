@@ -8007,8 +8007,8 @@ def api_level_slots_preview(slot_id):
         if not s:
             return jsonify({"ok": False, "msg": "slot nahi mila"})
         body = request.get_json(silent=True) or {}
-        for k in ("level", "zone", "zone_unit", "from_dir", "sell_leg", "hedge_delta", "lots", "exit", "contract"):
-            if k in body and body[k] is not None:
+        for k in ("level", "zone", "zone_unit", "from_dir", "sell_leg", "hedge_delta", "lots", "exit", "contract", "trend"):
+            if k in body:
                 s[k] = body[k]
         return jsonify(L.preview_structure(s))
     except Exception as e:

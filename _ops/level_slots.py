@@ -237,9 +237,27 @@ def validate_config(cfg, existing=None):
     if kind not in KINDS:
         return False, "kind galat (idx/prem)"
     out = {}
+    # trend line: {t1,p1,t2,p2} (t = bar time, same IST-shifted epoch the chart/bars use)
+    tr = cfg.get("trend", "__keep__")
+    if tr == "__keep__":
+        tr = base.get("trend")
+    if isinstance(tr, dict) and tr:
+        try:
+            t1, p1, t2, p2 = int(tr["t1"]), float(tr["p1"]), int(tr["t2"]), float(tr["p2"])
+            if t2 == t1 or p1 <= 0 or p2 <= 0:
+                return False, "trend line ke 2 point alag time pe hone chahiye"
+            if t2 < t1:
+                t1, p1, t2, p2 = t2, p2, t1, p1
+            out["trend"] = {"t1": t1, "p1": p1, "t2": t2, "p2": p2}
+        except Exception:
+            return False, "trend line galat"
+    else:
+        out["trend"] = None
     lvl = _num(cfg.get("level"))
+    if out.get("trend") and (lvl is None or lvl <= 0):
+        lvl = out["trend"]["p2"]                 # placeholder — runtime uses level_at(t)
     if lvl is None or lvl <= 0:
-        return False, "Key level > 0 do"
+        return False, "Key level > 0 do (ya trend line banao)"
     out["level"] = lvl
     zone = _num(cfg.get("zone"), 0.0)
     if zone < 0:
@@ -367,12 +385,13 @@ def arm(slot_id, spot_now=None):
         if is_expired(s):
             return False, f"valid till {s.get('valid_till')} nikal gaya"
         if spot_now is not None:
-            lo, hi = zone_band(s)
+            lo, hi = zone_band(s, now_bar_time())
+            _lv = level_at(s, now_bar_time())
             if s["from_dir"] == "below" and float(spot_now) > hi:
-                return False, (f"price ({float(spot_now):.1f}) level {s['level']:.1f} ke UPAR hai — "
+                return False, (f"price ({float(spot_now):.1f}) level {_lv:.1f} ke UPAR hai — "
                                f"'neeche se aaye' setup invalid; direction check karo")
             if s["from_dir"] == "above" and float(spot_now) < lo:
-                return False, (f"price ({float(spot_now):.1f}) level {s['level']:.1f} ke NEECHE hai — "
+                return False, (f"price ({float(spot_now):.1f}) level {_lv:.1f} ke NEECHE hai — "
                                f"'upar se aaye' setup invalid; direction check karo")
         s["status"] = "armed"
         s["armed_ts"] = int(time.time())
@@ -381,7 +400,7 @@ def arm(slot_id, spot_now=None):
         s.pop("pattern", None)
         s.pop("zone_ts", None)
         s["result"] = ""
-        _ev(s, f"ARMED — level {s['level']:g} ±{s.get('zone') or 0:g}{s.get('zone_unit')} "
+        _ev(s, f"ARMED — {'TREND line, abhi ' if s.get('trend') else 'level '}{level_at(s, now_bar_time()):g} ±{s.get('zone') or 0:g}{s.get('zone_unit')} "
                f"({'neeche se' if s['from_dir'] == 'below' else 'upar se'}), TF {s['tf']}")
         _write(d)
         return True, dict(s)
@@ -476,8 +495,25 @@ def is_expired(s, now=None):
     return now.strftime("%H:%M") >= (vt or "23:59")
 
 
-def zone_band(s):
-    lvl = float(s["level"])
+def level_at(s, t=None):
+    """Effective level: trend line value at bar time `t` (extrapolated), else the fixed level."""
+    tr = s.get("trend")
+    if isinstance(tr, dict) and tr and t is not None:
+        try:
+            t1, p1, t2, p2 = int(tr["t1"]), float(tr["p1"]), int(tr["t2"]), float(tr["p2"])
+            return p1 + (p2 - p1) * (int(t) - t1) / float(t2 - t1)
+        except Exception:
+            pass
+    return float(s["level"])
+
+
+def now_bar_time():
+    """Current IST wall-clock as the IST-shifted epoch the bars use (for level_at(now))."""
+    return int(_ist_now().replace(tzinfo=timezone.utc).timestamp())
+
+
+def zone_band(s, t=None):
+    lvl = level_at(s, t)
     z = float(s.get("zone") or 0)
     if str(s.get("zone_unit")) == "pct":
         z = lvl * z / 100.0
@@ -560,9 +596,11 @@ def advance(s, bars, now_hm=None, entry_confirm="close"):
         return s, False, True
     if not bars:
         return s, False, False
-    lo, hi = zone_band(s)
-    bearish = is_bearish(s)
     last = bars[-1]
+    lo, hi = zone_band(s, last.get("time"))          # trend line → level at THIS candle
+    if s.get("trend"):
+        s["level_eff"] = round(level_at(s, last.get("time")), 2)
+    bearish = is_bearish(s)
     prev = bars[-2] if len(bars) >= 2 else None
     last_ts = int(last.get("time") or 0)
     if s.get("seen_ts") == last_ts:
@@ -615,7 +653,7 @@ def apply_runtime(slot_id, s_new):
         s = d["slots"].get(slot_id)
         if not s:
             return False
-        for k in ("status", "pattern", "zone_ts", "seen_ts", "events", "last_msg"):
+        for k in ("status", "pattern", "zone_ts", "seen_ts", "events", "last_msg", "level_eff"):
             if k in s_new:
                 s[k] = s_new[k]
             elif k in ("pattern", "zone_ts"):

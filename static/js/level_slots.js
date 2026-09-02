@@ -12,7 +12,7 @@
   const D = { underlyings: {}, slots: [], prices: {}, mode: 'paper', fixed: [] };
   let ix = null, cur = null, F = null, Fid = null;     // F = working copy of the selected slot's config
   let chart = null, series = null, lines = [], chartKey = null, pollT = null;
-  let paneSig = null, drawMode = false, userLines = [], fsRO = null;
+  let paneSig = null, drawMode = false, trendMode = false, trendPts = [], userLines = [], fsRO = null, trendSeries = null, trendZone = [];
   const chartHost = document.createElement('div'); chartHost.id = 'chart';
   const sigOf = (s) => s ? JSON.stringify([s.status, s.last_msg, (s.events || []).length, s.entry, s.pattern, s.result, s.level, s.zone, s.exit]) : '';
   const DAYS_KEY = 'ls_chart_days';
@@ -113,7 +113,7 @@
     $('stabs').innerHTML = sl.map((s, k) => `<div class="stab ${s.id === cur ? 'on' : ''} ${k === 2 ? 'grp-start' : ''}" data-id="${s.id}">
         <span class="k"><i class="dot ${s.status}"></i> ${s.kind === 'idx' ? 'INDEX' : 'PREMIUM'} ${s.slot[1]}</span>
         <span class="n">${slotName(s)}</span>
-        <span class="s">${s.status !== 'idle' ? (LBL[s.status] || s.status) : (s.level ? 'idle · lvl ' + fmt(s.level) : 'not set')}</span></div>`).join('');
+        <span class="s">${s.status !== 'idle' ? (LBL[s.status] || s.status) : (s.trend ? 'idle · TREND' : (s.level ? 'idle · lvl ' + fmt(s.level) : 'not set'))}</span></div>`).join('');
     $('stabs').querySelectorAll('.stab').forEach(el => el.onclick = () => { cur = el.dataset.id; F = deepCopy(slot(cur)); Fid = cur; render(true); });
   }
   function slotName(s) {
@@ -153,6 +153,7 @@
        <span style="margin-left:auto" id="chPx"></span>
        <span class="tf" id="chDays">${[1, 5, 10, 30].map(d => `<button class="${on(d === chartDays())}" data-days="${d}">${d}d</button>`).join('')}</span>
        <button class="cbtn ${on(drawMode)}" id="drawBtn" title="click chart → horizontal line">＋ Line</button>
+       <button class="cbtn ${on(trendMode)}" id="trendBtn" title="2 click → trend line = slot ka level (us candle ke time pe line ki value)">＋ Trend</button>${F.trend ? `<button class="cbtn" id="trendClr" title="trend line hatao (fixed level wapas)">✕ trend</button>` : ''}
        <button class="cbtn" id="rstBtn" title="reset view (Alt+R)">⟲</button>
        <button class="cbtn" id="fsBtn" title="fullscreen (Esc)">⛶</button></div>
       <div id="chartslot"></div><div class="dlines" id="dlines" style="display:none"></div></div>
@@ -223,7 +224,9 @@
     if (!isIdx) loadStrikes(true);
     $('chartslot').appendChild(chartHost);
     document.querySelectorAll('#chDays button').forEach(b => b.onclick = () => { try { localStorage.setItem(DAYS_KEY, b.dataset.days); } catch (e) {} document.querySelectorAll('#chDays button').forEach(x => x.classList.remove('on')); b.classList.add('on'); loadChart(true); });
-    $('drawBtn').onclick = () => { drawMode = !drawMode; $('drawBtn').classList.toggle('on', drawMode); toast(drawMode ? 'chart pe click karo → line' : 'line mode off'); };
+    $('drawBtn').onclick = () => { drawMode = !drawMode; trendMode = false; $('drawBtn').classList.toggle('on', drawMode); $('trendBtn').classList.remove('on'); toast(drawMode ? 'chart pe click karo → line' : 'line mode off'); };
+    $('trendBtn').onclick = () => { trendMode = !trendMode; drawMode = false; trendPts = []; $('trendBtn').classList.toggle('on', trendMode); $('drawBtn').classList.remove('on'); toast(trendMode ? 'chart pe 2 click: pehla point, phir doosra → trend line' : 'trend mode off'); };
+    if ($('trendClr')) $('trendClr').onclick = () => { F.trend = null; toast('trend hataya — fixed level ' + (F.level || '—')); render(true); };
     $('fsBtn').onclick = toggleFs;
     $('projBtn').onclick = () => loadProjection(true);
     if (window._projCache && window._projCache.id === cur) renderProjection(window._projCache.d);
@@ -238,7 +241,7 @@
     const el = $('proj'); if (!el || !F) return;
     if (!F.level) { el.textContent = 'pehle Key level do'; return; }
     if (user) el.textContent = 'resolving legs…';
-    const body = { level: F.level, zone: F.zone, zone_unit: F.zone_unit, from_dir: F.from_dir, sell_leg: F.sell_leg, hedge_delta: F.hedge_delta, lots: F.lots, exit: F.exit, contract: F.contract };
+    const body = { level: F.level, zone: F.zone, zone_unit: F.zone_unit, from_dir: F.from_dir, sell_leg: F.sell_leg, hedge_delta: F.hedge_delta, lots: F.lots, exit: F.exit, contract: F.contract, trend: F.trend || null };
     const d = await api('/api/level-slots/' + encodeURIComponent(cur) + '/preview', { method: 'POST', body: JSON.stringify(body) });
     window._projCache = { id: cur, d };
     renderProjection(d);
@@ -259,8 +262,9 @@
   const zoneAbs = (f) => f.zone_unit === 'pct' ? (Number(f.level) || 0) * (Number(f.zone) || 0) / 100 : (Number(f.zone) || 0);
   const zoneLo = (f) => (Number(f.level) || 0) - zoneAbs(f), zoneHi = (f) => (Number(f.level) || 0) + zoneAbs(f);
   function hintText(f, s) {
-    if (!f.level) return 'Key level set karo, phir Save → ARM.';
+    if (!f.level && !f.trend) return 'Key level set karo (ya ＋ Trend se 2-click line), phir Save → ARM.';
     const bear = f.from_dir !== 'above', C = cur$(s.sym);
+    if (f.trend) { const tr = f.trend, sl = (tr.p2 - tr.p1) / ((tr.t2 - tr.t1) / 60); return `<b>TREND line</b> ${fmt(tr.p1, 1)} → ${fmt(tr.p2, 1)} (${sl >= 0 ? '+' : ''}${fmt(sl, 2)}/min), level = us candle ke time pe line ki value ± ${f.zone || 0}${f.zone_unit === 'pct' ? '%' : ''}${s.level_eff ? ' · abhi ' + fmt(s.level_eff, 1) : ''} → pattern → <b>agli candle ${bear ? 'LOW' : 'HIGH'} tode</b> → BUY ${bear ? 'CE' : 'PE'} wing PEHLE, phir SELL ${bear ? 'CE' : 'PE'} × ${f.lots || 1} lot.`; }
     const what = s.kind === 'idx' ? `Spot band <b>${fmt(zoneLo(f))} – ${fmt(zoneHi(f))}</b>` : `Premium band <b>${C}${fmt(zoneLo(f), 2)} – ${C}${fmt(zoneHi(f), 2)}</b>`;
     return `${what} me closed candle → pattern (${(f.patterns || []).join('/') || '—'}) → <b>agli candle us candle ka ${bear ? 'LOW' : 'HIGH'} ${(f.entry_confirm || 'close') === 'wick' ? 'wick se' : 'close pe'} tode</b> → BUY ${bear ? 'CE' : 'PE'} wing (≈${f.hedge_delta ?? 0.25}Δ) PEHLE, phir SELL ${s.kind === 'idx' ? 'ATM ' + (bear ? 'CE' : 'PE') : 'chosen contract'} × ${f.lots || 1} lot.`;
   }
@@ -279,7 +283,7 @@
   async function save() {
     if (!F) return;
     const body = { level: F.level, zone: F.zone, zone_unit: F.zone_unit, from_dir: F.from_dir, patterns: F.patterns, entry_confirm: F.entry_confirm,
-      sell_leg: F.sell_leg, hedge_delta: F.hedge_delta, lots: F.lots, tf: F.tf, valid_till: F.valid_till, contract: F.contract, exit: F.exit };
+      sell_leg: F.sell_leg, hedge_delta: F.hedge_delta, lots: F.lots, tf: F.tf, valid_till: F.valid_till, contract: F.contract, exit: F.exit, trend: F.trend || null };
     const d = await api('/api/level-slots/' + cur, { method: 'POST', body: JSON.stringify(body) });
     if (!d.ok) { toast(d.msg, 'bad'); return; }
     toast('saved', 'ok'); await refresh(true);
@@ -290,7 +294,7 @@
     const d = await api('/api/level-slots/' + cur + '/arm', { method: 'POST' });
     toast(d.msg, d.ok ? 'ok' : 'bad'); await refresh(true);
   }
-  const cfgOf = (s) => s ? ({ level: s.level, zone: s.zone, zone_unit: s.zone_unit, from_dir: s.from_dir, patterns: s.patterns, entry_confirm: s.entry_confirm, sell_leg: s.sell_leg, hedge_delta: s.hedge_delta, lots: s.lots, tf: s.tf, valid_till: s.valid_till, contract: s.contract, exit: s.exit }) : null;
+  const cfgOf = (s) => s ? ({ level: s.level, zone: s.zone, zone_unit: s.zone_unit, from_dir: s.from_dir, patterns: s.patterns, entry_confirm: s.entry_confirm, sell_leg: s.sell_leg, hedge_delta: s.hedge_delta, lots: s.lots, tf: s.tf, valid_till: s.valid_till, contract: s.contract, exit: s.exit, trend: s.trend || null }) : null;
   async function disarm() {
     const d = await api('/api/level-slots/' + cur + '/disarm', { method: 'POST' });
     toast(d.msg, d.ok ? 'ok' : 'bad'); await refresh(true);
@@ -308,8 +312,17 @@
     series = chart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
     window.addEventListener('resize', () => { try { chart.applyOptions({ width: el.clientWidth, height: el.clientHeight || 280 }); } catch (e) {} });
     chart.subscribeClick((param) => {
-      if (!drawMode || !param || !param.point) return;
+      if (!param || !param.point) return;
       const price = series.coordinateToPrice(param.point.y); if (price == null) return;
+      if (trendMode) {
+        const t = param.time || chart.timeScale().coordinateToTime(param.point.x); if (t == null) return;
+        trendPts.push({ t: Number(t), p: Math.round(price * 100) / 100 });
+        if (trendPts.length === 1) { toast('point 1 @ ' + fmt(price, 1) + ' — ab doosra click'); return; }
+        const [a, b] = trendPts; if (a.t === b.t) { trendPts = []; toast('dono point alag candle pe do', 'bad'); return; }
+        F.trend = { t1: a.t, p1: a.p, t2: b.t, p2: b.p }; F.level = F.level || b.p; trendPts = []; trendMode = false;
+        toast('trend line set — Save → ARM', 'ok'); render(true); return;
+      }
+      if (!drawMode) return;
       userLines.push(Math.round(price * 100) / 100); saveUserLines(); drawUserLines(); renderDlines();
     });
     return true;
@@ -354,7 +367,16 @@
     series.setData(d.bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })));
     lines.forEach(l => { try { series.removePriceLine(l); } catch (e) {} }); lines = [];
     const add = (price, color, title, dashed) => { if (price == null || isNaN(price)) return; lines.push(series.createPriceLine({ price: Number(price), color, lineWidth: dashed ? 1 : 2, lineStyle: dashed ? 2 : 0, axisLabelVisible: true, title })); };
-    if (F.level) { add(F.level, '#58a6ff', 'LVL'); if (zoneAbs(F) > 0) { add(zoneLo(F), '#58a6ff', 'zone', true); add(zoneHi(F), '#58a6ff', 'zone', true); } }
+    [trendSeries, ...trendZone].forEach(ts => { if (ts) { try { chart.removeSeries(ts); } catch (e) {} } }); trendSeries = null; trendZone = [];
+    if (F.trend) {
+      const tr = F.trend, lastT = d.bars[d.bars.length - 1].time, tfs = { '1m': 60, '3m': 180, '5m': 300, '15m': 900 }[tf] || 300;
+      const tEnd = Math.max(lastT + tfs * 20, tr.t2), slope = (tr.p2 - tr.p1) / (tr.t2 - tr.t1);
+      const lv = (t) => tr.p1 + slope * (t - tr.t1), z = zoneAbs(F);
+      const mk = (col, w, style, off) => { const ls_ = chart.addLineSeries({ color: col, lineWidth: w, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }); ls_.setData([{ time: Math.min(tr.t1, tr.t2), value: lv(Math.min(tr.t1, tr.t2)) + off }, { time: tEnd, value: lv(tEnd) + off }]); return ls_; };
+      trendSeries = mk('#58a6ff', 2, 0, 0);
+      if (z > 0) trendZone = [mk('#58a6ff', 1, 2, z), mk('#58a6ff', 1, 2, -z)];
+      const nowLv = lv(lastT); add(nowLv, '#58a6ff', 'LVL now', true);
+    } else if (F.level) { add(F.level, '#58a6ff', 'LVL'); if (zoneAbs(F) > 0) { add(zoneLo(F), '#58a6ff', 'zone', true); add(zoneHi(F), '#58a6ff', 'zone', true); } }
     const ss = d.slot || s, e = ss.entry || {}, ex = ss.exit || {}, en = ex.enabled || {};
     if (ss.pattern && ss.pattern.break_level) add(ss.pattern.break_level, '#d29922', 'break', true);
     // SL / Target lines — after entry anchored on the REAL entry spot (server-frozen); before

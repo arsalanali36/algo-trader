@@ -419,7 +419,7 @@ def _resolve_nse_structure(s, spot, occ, log=_log):
     sym = str(s["sym"]).upper()
     opt_type, _dir = ls.option_side(s)
     hedge_delta = float(s.get("hedge_delta") or 0.25)
-    ref_px = float(s["level"]) if str(s.get("sell_leg")) == "level" and s.get("level") else spot
+    ref_px = ls.level_at(s, ls.now_bar_time()) if str(s.get("sell_leg")) == "level" and s.get("level") else spot
     s_sec, s_tsym, lot_sz, s_off = lc.clear_leg(sym, ref_px, opt_type, 0, occ,
                                                 dhan_master.get_option_contract, log=log)
     if not s_sec:
@@ -546,7 +546,7 @@ def preview_structure(s):
     # ── ₹ projection per enabled exit line (index space → ₹ via rs_per_pt; ₹ lines as typed)
     proj = []
     rpp = out.get("rs_per_pt")
-    anchor = float(s.get("level") or out.get("spot") or 0)
+    anchor = float(ls.level_at(s, ls.now_bar_time()) if s.get("level") else (out.get("spot") or 0))
     if en.get("rs"):
         if ex.get("rs_sl"): proj.append({"src": "rs", "side": "sl", "rs": -abs(float(ex["rs_sl"]))})
         if ex.get("rs_tg"): proj.append({"src": "rs", "side": "target", "rs": abs(float(ex["rs_tg"]))})
