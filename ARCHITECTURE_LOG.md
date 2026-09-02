@@ -1808,7 +1808,7 @@ leg doosre venue pe), India tax 30%+1% TDS -> aaj ke run-rate pe FD se saaf beht
 Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.
 
 ## 2026-09-02 — ADR-013 feed fix: cross-process dhan_feed quotes + in-connection subscribe
-**Status:** IN-PROGRESS
+**Status:** DONE — VPS-live `d5afa84` (+guard follow-up). Deploy: FF-pull, dashboard→monitor restart, position/PID diff EMPTY (59 open rows / 0 live). Verified on VPS: non-owner process got NIFTY ATM PE `bid 100.90/ask 101.15` in 0.62s from shared store, `marketable_price SELL → src=bid`; 19 quotes flowing. Strategy forks pick up new smart_order at 09:10 re-warm (03-Sep). LESSONS TRAP #204, ADR-013 ✅ section.
 **Kya:** `dhan_feed` ka bid/ask har process ko dikhe (owner shared sqlite me ticks likhe, baaki wahan se padhein), runtime `add()` ab reconnect ki jagah live-connection pe subscribe packet bheje, recv pe timeout taaki heartbeat/subs quiet market me bhi chalein; `smart_order` order se pehle quote ka short wait kare.
 **Layer:** broker / infra (money-path: order pricing)
 **Files:** `_data/dhan_feed.py`, `_core/smart_order.py`, `_ADR/ADR-013-*.md`, `LESSONS.md`

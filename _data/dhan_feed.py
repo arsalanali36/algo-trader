@@ -476,6 +476,11 @@ def start(creds, sec_tuples=None):
 def _queue(sec_tuple):
     """Add to instrument list without restarting (used before start)."""
     seg, sid = sec_tuple[0], str(sec_tuple[1])
+    if not sid.isdigit():
+        # Dhan security ids are numeric. Non-numeric = another venue's symbol
+        # (Delta crypto legs "C-BTC-77400-020926" came through the dashboard's
+        # per-position subscribe) — never send those to the Dhan socket (ADR-021).
+        return
     if (seg, sid) in _seen:
         return
     _seen.add((seg, sid))
