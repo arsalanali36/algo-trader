@@ -395,6 +395,7 @@
 
   // ───────────── boot ─────────────
   window.LS = { refresh, D: () => D, lines: () => lines.map(l => { try { return l.options().title + '@' + l.options().price; } catch (e) { return '?'; } }) };
-  refresh(true);
+  const boot = () => { refresh(true); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   pollT = setInterval(() => { if (!document.hidden) { const keepF = F; refresh(false).then(() => { /* keep unsaved edits */ if (keepF && Fid === cur) F = keepF; }); } }, 10000);
 })();
