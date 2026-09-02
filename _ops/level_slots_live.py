@@ -164,6 +164,13 @@ def _bucket_1m(rows, tf_min, now_ist_epoch):
     return [out[k] for k in sorted(out)]
 
 
+def _in_nse_session(t_ist_epoch):
+    """09:15 ≤ IST wall-clock < 15:30 — drops Dhan's synthetic post-close index bar
+    (verified 2026-09-02: IDX_I 1-min series ends 15:29 then one 18:41 bar = closing value)."""
+    hm = (int(t_ist_epoch) % 86400) // 60
+    return 555 <= hm < 930
+
+
 def fetch_bars(s, tf=None, force=False):
     """Closed candles for the slot's source at its TF (oldest→newest, IST-shifted
     epoch 'time' like /api/trade-chart-data). [] on any failure (freeze, never guess)."""
@@ -198,7 +205,10 @@ def fetch_bars(s, tf=None, force=False):
             rows = []
             for t, o, h, l, c in zip(df["time"], df["open"], df["high"], df["low"], df["close"]):
                 # df.time = naive IST Timestamp → treat as UTC to get IST-shifted epoch
-                rows.append((int(t.replace(tzinfo=timezone.utc).timestamp()), o, h, l, c))
+                te = int(t.replace(tzinfo=timezone.utc).timestamp())
+                if not _in_nse_session(te):
+                    continue           # Dhan appends a synthetic post-close bar (18:41, O=H=L=C)
+                rows.append((te, o, h, l, c))
             bars = _bucket_1m(rows, tf_min, int(now + 19800))
     except Exception as e:
         _log(f"bars fetch fail {s.get('id')}: {e}")
