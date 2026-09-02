@@ -187,10 +187,22 @@ def _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl,
         try:
             rows, status = opt_hist.fetch_rolling(_tok(), sec_id, instrument, flag, off,
                                                   dtype, side.lower(), frm, to,
-                                                  interval=interval, rl=rl)
+                                                  interval=interval, rl=rl, timeout=90)
             if status == 429:
                 print("  [%d/%d] 429 — backoff 20s (%s)" % (i + 1, total, key), flush=True)
                 time.sleep(20); continue
+            if status == -1:
+                # Network/timeout — NOT an answer about the data. Never mark done
+                # (2026-09-02: Dhan rollingoption got slow, ~25-30s per call; the
+                # old path fell through to `rows==[]` → "empty" → done = silent
+                # permanent gap in the lake). Retry a few times, else leave for
+                # the next resume.
+                # Same shape as the 429 branch: skip WITHOUT done.add → picked up
+                # by the next resume (manifest-driven).
+                err += 1
+                print("  [%d/%d] NET/TIMEOUT — not marked done, retried on resume (%s)"
+                      % (i + 1, total, key), flush=True)
+                time.sleep(5); continue
             if status in (401, 403):
                 # AUTH failure = token expired/invalid. This is NOT a per-task input
                 # error: marking it done would silently poison the manifest (every
