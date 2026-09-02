@@ -474,6 +474,21 @@ def _leg_deltas(R, spot):
         return None, None
 
 
+def _feed_ba(sec_id, seg=SEG):
+    """(bid, ask, src) from the shared dhan_feed store — the SAME quote smart_order prices
+    the real order off (ADR-013). wait_quote asks the owner to subscribe (≤2s). None/None
+    when no feed owner (off-market) — preview then shows LTP-only, never guesses a spread."""
+    try:
+        import dhan_feed
+        q = dhan_feed.get_quote(str(sec_id), max_age=dhan_feed.FEED_MAX_AGE) or {}
+        if not q:
+            q = dhan_feed.wait_quote(str(sec_id), seg=seg, timeout=2.0, max_age=dhan_feed.FEED_MAX_AGE) or {}
+        b, a = q.get("bid"), q.get("ask")
+        return (float(b) if b else None, float(a) if a else None, "feed" if (b or a) else None)
+    except Exception:
+        return None, None, None
+
+
 def preview_structure(s):
     """What the slot WOULD do right now (no order): legs (strike/LTP/Δ), net |Δ|/unit,
     ₹ per index point, net credit, REAL hedged margin (risk_gate.position_margin = the same
@@ -535,9 +550,18 @@ def preview_structure(s):
         except Exception as e:
             _log(f"margin preview fail: {e}")
         nd = (ds - dw) if (ds is not None and dw is not None) else None
+        sb, sa, _s1 = _feed_ba(R["s_sec"])
+        wb, wa, _s2 = _feed_ba(R["w_sec"])
+        # expected FILLS = what smart_order would actually place at: SELL hits bid, BUY lifts ask
+        fill_s, fill_w = (sb if sb else None), (wa if wa else None)
+        credit_fill = (fill_s - fill_w) if (fill_s and fill_w) else None
         out.update({"ok": True, "spot": spot, "cur": "₹", "lot_size": R["lot_sz"], "qty": q, "atm_iv": round(R["atm_iv"], 4) if R.get("atm_iv") else None,
-                    "legs": [{"side": "SELL", "sym": R["s_tsym"], "strike": R["s_strike"], "ltp": R["s_prem"], "delta": ds},
-                             {"side": "BUY", "sym": R["w_tsym"], "strike": R["w_strike"], "ltp": R["w_prem"], "delta": dw}],
+                    "legs": [{"side": "SELL", "sym": R["s_tsym"], "strike": R["s_strike"], "ltp": R["s_prem"], "delta": ds, "bid": sb, "ask": sa, "fill": fill_s},
+                             {"side": "BUY", "sym": R["w_tsym"], "strike": R["w_strike"], "ltp": R["w_prem"], "delta": dw, "bid": wb, "ask": wa, "fill": fill_w}],
+                    "credit_fill_unit": round(credit_fill, 2) if credit_fill is not None else None,
+                    "credit_fill_rs": round(credit_fill * q, 0) if credit_fill is not None else None,
+                    "spread_cost_rs": round((credit - credit_fill) * q, 0) if credit_fill is not None else None,
+                    "feed": bool(_s1 or _s2),
                     "net_delta": round(nd, 3) if nd is not None else None,
                     "rs_per_pt": round(nd * q, 2) if nd is not None else None,
                     "credit_unit": round(credit, 2), "credit_rs": round(credit * q, 0),
