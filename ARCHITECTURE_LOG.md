@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-09-02 — 🎯 Level Spread Slots (`/level-slots`) — key-level → candle-pattern → next-candle break → delta-hedged credit spread
+**Status:** DONE (VPS deploy same session — see Update Log)
+**Kya:** Orders & P&L ▾ me naya page. Har underlying (NIFTY / BANKNIFTY / koi bhi F&O stock / BTC-Delta) ke 4 slot: 2 Index-level (spot) + 2 Premium-level (option price). User key level + zone ± + direction (neeche se aaye = resistance → Bear Call; upar se = support → Bull Put) + hedge delta + lots + TF + valid-till deta hai. Loop: closed candle zone me → engulf/hammer/inside pattern → AGLI candle pattern-candle ka low (CE sell) / high (PE sell) tode → BUY hedge wing (≈delta) PEHLE, phir SELL ATM → group pe Trade Manager exit rule (₹ combined / index pt / index price + wick/close/close+N confirm) arm. PAPER hard-lock v1.
+**Layer:** execution / ui / config
+**Files:** `_ops/level_slots.py` (NAYA, pure state+decision, day-scoped runtime, claim one-shot) · `_CHARTING/patterns.py` (+`inside_bar`) · `_ops/delta_feed.py` (+`candles`) · `trader_dashboard.py` (`_fetch_1m_today` shared → `_last_closed_candle_close` refactor + `_tf_bars`, `level_slots_loop`, `_fire_level_slot`, routes `/level-slots` + `/api/level-slots*`, nav item) · `monitor_daemon.py` (thread) · `static/js/topnav.js` · `templates/level_slots.html` + `static/js/level_slots.js` · `strategy_registry` (naya member) · `_ADR/ADR-024-level-slots.md`
+**Kyun:** user ka manual setup (key level pe candle confirm → spread) — trigger/exit/hedge infra sab pehle se hai (price_triggers, Trade Manager, wing_by_delta, execute_basket_exit); sirf entry-side state machine + UI nayi hai. Rule 6B: kuch duplicate nahi — patterns `_CHARTING/patterns.py` se, hedge `strategy_safety.wing_by_delta`, orders `execution_gateway`, exits `position_exit_rules`.
+**Depends on:** ltp_poller/shared_ltp_cache (spot), dhan_master options cache (OPTIDX+OPTSTK), Dhan `charts/intraday` (1m → TF bucket), delta_feed (BTC spot/chain/candles)
+**Rule 10:** discretionary tool (user level chunta hai) — backtest NAHI; PAPER-only, koi validated number claim nahi.
+
+
 ## 2026-09-02 — 02.09 Auto-Rolling ATM Straddle: pehla REAL-lake backtest + SL-variant sweep
 **Status:** DONE (research-only, kuch deploy nahi)
 **Kya:** 02.09 (hedged rolling straddle, PAPER 29-Jul se, kabhi backtest nahi hua) ko NIFTY OptChainLake_1m (2021-07→2026-08, 1,254 din) pe LIVE `should_roll()`/`RollerState` import karke chalaya; 4 SL variants (none / breakeven-exit / defensive-roll / premium 1.5x-2x); slip collector bid/ask se naapi (ATM 0.10 pt, wing 0.05 pt per side).

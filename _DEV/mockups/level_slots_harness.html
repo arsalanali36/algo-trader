@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Browser harness for static/js/level_slots.js — REAL page JS + vendor chart, fetch() STUBBED
+     (no dashboard, no Dhan). Serve repo root: python -m http.server 5399 → /_DEV/mockups/level_slots_harness.html -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>level_slots harness</title>
+<script>
+// ---- mock API state (shape == /api/level-slots*) ----
+const now = Math.floor(Date.now() / 1000);
+function mkSlot(sym, sid, kind, extra) {
+  return Object.assign({ id: sym + ':' + sid, sym, slot: sid, kind, level: null, zone: null, zone_unit: 'pt', from_dir: 'below',
+    patterns: ['engulf', 'hammer', 'inside'], sell_leg: 'atm', hedge_delta: 0.25, lots: 1, tf: '5m', valid_till: '14:30', mode: 'paper',
+    entry_confirm: 'close', contract: null, exit: { rs_sl: null, rs_tg: null, ip_sl: null, ip_tg: null, il_sl: null, il_tg: null,
+    enabled: { rs: kind === 'prem', ip: kind === 'idx', il: false }, confirm_mode: 'close', confirm_min: 2 },
+    status: 'idle', fired: false, events: [], last_msg: '' }, extra || {});
+}
+const STATE = { underlyings: { NIFTY: { fixed: true }, BANKNIFTY: { fixed: true }, BTC: { fixed: true } },
+  prices: { NIFTY: 24612.4, BANKNIFTY: 52180.6, BTC: 77120 }, mode: 'paper', fixed: ['NIFTY', 'BANKNIFTY', 'BTC'], slots: [] };
+for (const s of ['NIFTY', 'BANKNIFTY', 'BTC']) for (const k of ['I1', 'I2', 'P1', 'P2']) STATE.slots.push(mkSlot(s, k, k[0] === 'I' ? 'idx' : 'prem'));
+// one pre-armed pattern slot with events, one entered
+Object.assign(STATE.slots[0], { level: 24700, zone: 15, status: 'pattern', exit: { ip_sl: 25, ip_tg: 50, enabled: { rs: false, ip: true, il: false }, confirm_mode: 'close', confirm_min: 2 },
+  pattern: { ts: 0, name: 'bear_engulf', break_level: 24688.3 }, events: ['10:30 ARMED — level 24700 ±15pt', '10:35 candle zone 24685–24715 me', '10:40 PATTERN bear_engulf @ zone — agli candle LOW 24688.3 tode to entry'], last_msg: 'PATTERN bear_engulf' });
+Object.assign(STATE.slots[1], { level: 24480, zone: 15, from_dir: 'above', status: 'entered', exit: { il_sl: 24440, il_tg: 24600, enabled: { rs: false, ip: false, il: true }, confirm_mode: 'close', confirm_min: 2 },
+  entry: { group_id: 'LVL_NIFTY_I2_1', rule_key: 'g:LVL_NIFTY_I2_1', spot: 24483, ts: now - 1800, dir: 1, credit: 71.2, legs: [{ side: 'BUY', trad_sym: 'NIFTY-Sep2026-24300-PE', price: 28.9 }, { side: 'SELL', trad_sym: 'NIFTY-Sep2026-24500-PE', price: 100.1 }] },
+  events: ['11:10 ENTERED [PAPER] SELL 24500PE + BUY 24300PE'], last_msg: 'ENTERED', result: '[PAPER] SELL … ×2L' });
+function bars(base, n, tf) {
+  const span = { '1m': 60, '3m': 180, '5m': 300, '15m': 900 }[tf] || 300; const out = []; let px = base - 90;
+  const t0 = Math.floor((now + 19800) / span) * span - n * span;
+  for (let i = 0; i < n; i++) { const o = px, c = o + (Math.sin(i / 3) * 12) + (i > n - 12 ? 6 : 0); const h = Math.max(o, c) + 5, l = Math.min(o, c) - 5; out.push({ time: t0 + i * span, open: o, high: h, low: l, close: c }); px = c; }
+  return out;
+}
+STATE.slots[0].pattern.ts = Math.floor((now + 19800) / 300) * 300 - 6 * 300;
+const CALLS = [];
+window.fetch = async (url, opt) => {
+  CALLS.push(url);
+  const m = (opt && opt.method) || 'GET'; const body = opt && opt.body ? JSON.parse(opt.body) : {};
+  const J = (o) => ({ status: 200, json: async () => o });
+  if (url === '/api/level-slots') return J(Object.assign({ ok: true }, STATE));
+  if (url.startsWith('/api/level-slots/search')) { const q = decodeURIComponent(url.split('q=')[1] || ''); return J({ ok: true, symbols: ['RELIANCE', 'SBIN', 'HDFCBANK', 'ICICIBANK', 'INFY'].filter(x => x.includes(q)) }); }
+  if (url === '/api/level-slots/underlying' && m === 'POST') { const s = body.sym; if (!STATE.underlyings[s]) { STATE.underlyings[s] = {}; STATE.prices[s] = 1234.5; for (const k of ['I1', 'I2', 'P1', 'P2']) STATE.slots.push(mkSlot(s, k, k[0] === 'I' ? 'idx' : 'prem')); } return J({ ok: true }); }
+  if (url.startsWith('/api/level-slots/underlying/') && m === 'DELETE') { const s = url.split('/').pop(); if (STATE.fixed.includes(s)) return J({ ok: false, msg: 'fixed' }); delete STATE.underlyings[s]; STATE.slots = STATE.slots.filter(x => x.sym !== s); return J({ ok: true }); }
+  if (url.startsWith('/api/level-slots/contracts')) return J({ ok: true, spot: 24612, rows: [-2, -1, 0, 1, 2].map(k => ({ offset: k, strike: 24600 + k * 50, sec_id: String(70000 + k), trad_sym: 'NIFTY-Sep2026-' + (24600 + k * 50) + '-CE', lot: 65, expiry: '2026-09-08' })) });
+  let mm = url.match(/^\/api\/level-slots\/([^/?]+)\/chart/); if (mm) { const id = decodeURIComponent(mm[1]); const s = STATE.slots.find(x => x.id === id); const tf = (url.split('tf=')[1] || '5m'); return J({ ok: true, bars: bars(s.level || STATE.prices[s.sym] || 100, 80, tf), slot: s, tf, price: STATE.prices[s.sym] }); }
+  mm = url.match(/^\/api\/level-slots\/([^/?]+)\/arm$/); if (mm) { const s = STATE.slots.find(x => x.id === decodeURIComponent(mm[1])); if (!s.level) return J({ ok: false, msg: 'pehle level set karo' }); s.status = 'armed'; s.events.push('ARMED'); return J({ ok: true, msg: 'ARMED (price 24612)' }); }
+  mm = url.match(/^\/api\/level-slots\/([^/?]+)\/disarm$/); if (mm) { const s = STATE.slots.find(x => x.id === decodeURIComponent(mm[1])); s.status = 'idle'; return J({ ok: true, msg: 'disarmed' }); }
+  mm = url.match(/^\/api\/level-slots\/([^/?]+)$/); if (mm && m === 'POST') { const s = STATE.slots.find(x => x.id === decodeURIComponent(mm[1])); if (!body.level) return J({ ok: false, msg: 'Key level > 0 do' }); Object.assign(s, body, { mode: 'paper' }); return J({ ok: true, slot: s }); }
+  return J({ ok: false, msg: 'unstubbed ' + url });
+};
+window.__CALLS = CALLS; window.__STATE = STATE;
+</script>
+<link rel="stylesheet" href="data:text/css,">
+</head>
+<body>
+<div id="host"></div>
+<script>
+// pull the REAL template's markup (body part) so CSS + ids match production exactly
+fetch.__real = null;
+(async () => {
+  const r = await (window.__origFetch || ((u) => new Promise((res, rej) => { const x = new XMLHttpRequest(); x.open('GET', u); x.onload = () => res({ text: async () => x.responseText }); x.onerror = rej; x.send(); })))('/templates/level_slots.html');
+  const html = await r.text();
+  const style = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const bodyInner = html.match(/<body>([\s\S]*?)<script src="\/static\/vendor/)[1].replace(/<script src="\/static\/js\/topnav.js"><\/script>/, '');
+  const st = document.createElement('style'); st.textContent = style; document.head.appendChild(st);
+  document.getElementById('host').innerHTML = bodyInner;
+  const v = document.createElement('script'); v.src = '/static/vendor/lightweight-charts.standalone.production.js';
+  v.onload = () => { const s = document.createElement('script'); s.src = '/static/js/level_slots.js'; document.body.appendChild(s); };
+  document.body.appendChild(v);
+})();
+</script>
+</body></html>

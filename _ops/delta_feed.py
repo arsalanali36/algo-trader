@@ -213,6 +213,35 @@ def ironfly_setup(underlying="BTC", expiry_code=None, wing=None):
     return _cached(f"fly:{underlying}:{expiry_code}:{wing}", _b)
 
 
+def candles(underlying="BTC", resolution="5m", n=120):
+    """Recent OHLC candles for the perpetual (spot proxy) — `/v2/history/candles`.
+    Returns oldest→newest list of {time(epoch s), open, high, low, close} for the
+    last `n` bars; [] on any failure. Cached (_TTL) like everything else here.
+    Used by level_slots (BTC index-level slots) — same shape as the Dhan-bucketed
+    bars trader_dashboard._tf_bars returns, so the state machine is source-agnostic."""
+    res_s = {"1m": 60, "3m": 180, "5m": 300, "15m": 900}.get(resolution, 300)
+
+    def _b():
+        end = int(time.time())
+        j = _get("/v2/history/candles", {"resolution": resolution,
+                                        "symbol": f"{underlying}USD",
+                                        "start": end - res_s * (n + 2), "end": end})
+        rows = (j or {}).get("result") if j else None
+        if not rows:
+            return None
+        out = []
+        for r in rows:
+            try:
+                out.append({"time": int(r["time"]), "open": float(r["open"]),
+                            "high": float(r["high"]), "low": float(r["low"]),
+                            "close": float(r["close"])})
+            except (KeyError, TypeError, ValueError):
+                continue
+        out.sort(key=lambda x: x["time"])
+        return out[-n:]
+    return _cached(f"candles:{underlying}:{resolution}:{n}", _b) or []
+
+
 if __name__ == "__main__":
     import json
     print("spot BTC:", spot("BTC"))

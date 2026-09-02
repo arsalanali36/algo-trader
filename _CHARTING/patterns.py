@@ -137,3 +137,14 @@ def detect_pattern_tags(df, min_body=DEFAULT_MIN_BODY_SIZE, wick_ratio=DEFAULT_W
             if check(o, h, l, c, po, ph, pl, pc, min_body, wick_ratio):
                 tags.append({"time": unix_ts, "bar_index": i, "pattern": name, "direction": direction})
     return tags
+
+
+def inside_bar(ph, pl, h, l):
+    """Inside bar: current candle's whole range sits inside the previous one
+    (h <= ph and l >= pl). Direction-neutral — the caller decides what it means
+    at a level (used by _ops/level_slots.py: inside candle AT a key level +
+    next-candle break = entry). Added 2026-09-02."""
+    try:
+        return float(h) <= float(ph) and float(l) >= float(pl)
+    except (TypeError, ValueError):
+        return False

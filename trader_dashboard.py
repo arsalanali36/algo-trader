@@ -7901,6 +7901,137 @@ def api_triggers_delete(tid):
         return jsonify({"ok": False, "msg": str(e)})
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 🎯 LEVEL SPREAD SLOTS (registry 03.02) — key-level → candle pattern → next-candle
+# break → delta-hedged credit spread. State: _ops/level_slots.py (pure), loop + fire:
+# _ops/level_slots_live.py (monitor_daemon thread). These routes are THIN (CRUD +
+# read-only chart data) — no order path here. PAPER hard-lock lives in the module.
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route('/level-slots')
+def level_slots_page():
+    return render_template("level_slots.html")
+
+
+@app.route('/api/level-slots', methods=['GET'])
+def api_level_slots_list():
+    try:
+        import level_slots as ls
+        import level_slots_live as L
+        ls.ensure_fixed()
+        und = ls.list_underlyings()
+        prices = {sym: L.spot_cached(sym) for sym in und}
+        return jsonify({"ok": True, "underlyings": und, "slots": ls.list_slots(),
+                        "prices": prices, "mode": L.MODE, "fixed": list(ls.FIXED_UNDERLYINGS)})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/level-slots/search')
+def api_level_slots_search():
+    """F&O underlyings (scrip master OPTIDX+OPTSTK) — never a hardcoded list."""
+    try:
+        import level_slots_live as L
+        q = (request.args.get('q') or '').strip().upper()
+        syms = [x for x in L.fno_symbols() if (q in x) and x not in ("NIFTY", "BANKNIFTY")]
+        return jsonify({"ok": True, "symbols": syms[:60]})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "symbols": []})
+
+
+@app.route('/api/level-slots/underlying', methods=['POST'])
+def api_level_slots_add_underlying():
+    try:
+        import level_slots as ls
+        import level_slots_live as L
+        sym = str((request.get_json() or {}).get("sym") or "").upper().strip()
+        if not sym:
+            return jsonify({"ok": False, "msg": "symbol do"})
+        if sym != "BTC" and not L.is_fno_underlying(sym):
+            return jsonify({"ok": False, "msg": f"{sym} F&O universe me nahi (options listed nahi)"})
+        ok, res = ls.add_underlying(sym, {"source": "delta" if sym == "BTC" else "nse"})
+        return jsonify({"ok": ok, "msg": res if not ok else "added", "underlying": res if ok else None})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/level-slots/underlying/<sym>', methods=['DELETE'])
+def api_level_slots_del_underlying(sym):
+    try:
+        import level_slots as ls
+        ok, msg = ls.remove_underlying(sym)
+        return jsonify({"ok": ok, "msg": msg})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/level-slots/contracts')
+def api_level_slots_contracts():
+    """Premium-slot strike picker: ATM±n of the nearest expiry (live spot, scrip master)."""
+    try:
+        import level_slots_live as L
+        sym = (request.args.get('sym') or 'NIFTY').upper()
+        opt = (request.args.get('opt') or 'CE').upper()
+        if opt not in ("CE", "PE"):
+            return jsonify({"ok": False, "msg": "opt CE/PE"})
+        return jsonify(L.contracts_near_atm(sym, opt, n=int(request.args.get('n') or 6)))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "rows": []})
+
+
+@app.route('/api/level-slots/<path:slot_id>/chart')
+def api_level_slots_chart(slot_id):
+    """Closed candles at the slot's TF (or ?tf=) + the slot itself for overlays. Read-only."""
+    try:
+        import level_slots as ls
+        import level_slots_live as L
+        s = ls.get_slot(slot_id)
+        if not s:
+            return jsonify({"ok": False, "msg": "slot nahi mila"})
+        tf = request.args.get('tf') or s.get("tf") or "5m"
+        bars = L.fetch_bars(s, tf=tf)
+        return jsonify({"ok": True, "bars": bars[-160:], "slot": s, "tf": tf,
+                        "price": L.price_now(s, wide=True)})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "bars": []})
+
+
+@app.route('/api/level-slots/<path:slot_id>/arm', methods=['POST'])
+def api_level_slots_arm(slot_id):
+    try:
+        import level_slots as ls
+        import level_slots_live as L
+        s = ls.get_slot(slot_id)
+        if not s:
+            return jsonify({"ok": False, "msg": "slot nahi mila"})
+        px = L.price_now(s)
+        if px is None:
+            return jsonify({"ok": False, "msg": "price abhi nahi mila — arm REFUSED (galat direction se surprise fill na ho)"})
+        ok, res = ls.arm(slot_id, spot_now=px)
+        return jsonify({"ok": ok, "msg": res if not ok else f"ARMED (price {px:g})", "slot": res if ok else None})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/level-slots/<path:slot_id>/disarm', methods=['POST'])
+def api_level_slots_disarm(slot_id):
+    try:
+        import level_slots as ls
+        ok, res = ls.disarm(slot_id, "disarmed (user)")
+        return jsonify({"ok": ok, "msg": res if not ok else "disarmed", "slot": res if ok else None})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/level-slots/<path:slot_id>', methods=['POST'])
+def api_level_slots_save(slot_id):
+    try:
+        import level_slots as ls
+        ok, res = ls.save_slot(slot_id, request.get_json() or {})
+        return jsonify({"ok": ok, "msg": res if not ok else "saved", "slot": res if ok else None})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/peak-pnl-history')
 def api_peak_pnl_history():
     """Returns P&L history for any date. Accepts ?date=YYYY-MM-DD (defaults to today).

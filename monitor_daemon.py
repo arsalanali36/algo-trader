@@ -34,6 +34,15 @@ if __name__ == '__main__':
     # keeps index spot warm) so it reads spot with zero extra Dhan calls.
     threading.Thread(target=td.trigger_watch_loop, daemon=True).start()
 
+    # 🎯 Level Spread Slots (03.02) — key-level → candle pattern → next-candle break →
+    # hedged credit spread (PAPER hard-lock). Self-contained in _ops/level_slots_live.py;
+    # no-op unless a slot is ARMED. Lives here for the poller-warmed spot/LTP cache.
+    try:
+        import level_slots_live
+        threading.Thread(target=level_slots_live.watch_loop, daemon=True).start()
+    except Exception as _e:
+        print(f"[monitor] level_slots_live not started: {_e}", flush=True)
+
     # Option-chain "unusual behaviour" watcher (~60s — reads the chain snapshots
     # the /curves page uses, fires bell/toast alerts on gamma spike / straddle
     # crush / fast OI unwind). `on_fire` hook lets the auto-straddle feature (C)

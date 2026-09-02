@@ -27,7 +27,8 @@
   // 📒 Orders ▾ dropdown (Orders & P&L in-page tab + standalone Broker Orders page)
   var ORDERS = [
     { href: '/?tab=orders',   label: '📒 Orders & P&L' },
-    { href: '/broker-orders', label: '🧾 Broker Orders' }
+    { href: '/broker-orders', label: '🧾 Broker Orders' },
+    { href: '/level-slots',   label: '🎯 Level Slots' }
   ];
   var REPORTS = [
     { href: '/report',        label: '📆 Daily Report' },
