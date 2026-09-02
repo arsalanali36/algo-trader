@@ -1830,3 +1830,10 @@ Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.
 **Files:** `_ops/weekly_ironfly_live.py`, `data/weekly_ironfly_positions.json` (VPS data fix)
 **Kyun:** user: "02.17 aaj kyun nahi chali"
 **Depends on:** nothing
+
+## 2026-09-02 — 04.03.02 chainzone STOPPED (user) + registry retired; 02.17 one-shot fire Thu 03-Sep 09:20 (user)
+**Status:** DONE
+**Kya:** (a) chainzone_v1 `/api/stop` (internal token) → active=false, supervisor desired=stopped, process gaya; broker flat verify (dono aaj ke trades mirror-closed). Registry 04.03.02 → `retired` + note (VPS pe edit+commit `12e9a53`, guard 0 mismatch). (b) 02.17 ka Wed entry TRAP #205 se miss hua → user ne kaha kal 09:20 fire karo → `/root/ARSALAN/fire_ironfly_once.py` + `algo-ironfly-once.timer` (OnCalendar 2026-09-03 09:20, Persistent) → `fire_ironfly('NIFTY','weekly_ironfly')` apne saare gates ke saath; position shared state me → chalta ironfly_loop manage karega.
+**Layer:** ops / config
+**Kyun:** user request. ⚠️ Rule 10: Thu entry ≠ backtested Wed (day-after-expiry) entry — user ka explicit faisla, ek baar ke liye.
+**Depends on:** algo-monitor ironfly_loop running (yes)
