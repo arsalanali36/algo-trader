@@ -410,6 +410,159 @@ def contracts_near_atm(sym, opt, n=6):
     return {"ok": True, "spot": spot, "rows": rows}
 
 
+def _resolve_nse_structure(s, spot, occ, log=_log):
+    """Resolve the credit-spread legs for a slot at `spot`: SELL (ATM / strike-near-level) +
+    BUY wing ≈ hedge_delta (IV back-solved from the sold leg's live premium). Shared by the
+    fire path AND the preview (Rule 6B — one resolver, never two). Returns (dict, None) or
+    (None, err). dict: s_sec s_tsym s_off s_strike s_exp s_prem lot_sz atm_iv T bs w_sec w_tsym
+    w_lot w_strike w_prem."""
+    sym = str(s["sym"]).upper()
+    opt_type, _dir = ls.option_side(s)
+    hedge_delta = float(s.get("hedge_delta") or 0.25)
+    ref_px = float(s["level"]) if str(s.get("sell_leg")) == "level" and s.get("level") else spot
+    s_sec, s_tsym, lot_sz, s_off = lc.clear_leg(sym, ref_px, opt_type, 0, occ,
+                                                dhan_master.get_option_contract, log=log)
+    if not s_sec:
+        return None, f"{opt_type} sell-leg resolve fail"
+    occ.add(str(s_sec))
+    _x, _xt, _xl, s_strike, s_exp = dhan_master.get_option_contract_ex(sym, ref_px, opt_type, s_off)
+    lot_sz = int(lot_sz or _xl or 0)
+    if not lot_sz:
+        return None, f"lot size resolve nahi hua ({s_tsym}) — order NAHI bheja"
+    s_prem = _leg_ltp(s_sec)
+    if not s_prem:
+        return None, f"{s_tsym} premium nahi mila — entry SKIP (₹0 fill kabhi nahi, TRAP #1)"
+    atm_iv, T, bs = None, None, None
+    try:
+        import payoff
+        bs = payoff._bs()
+        exp_date = datetime.strptime(s_exp, "%Y-%m-%d %H:%M:%S").date() if s_exp else None
+        T = payoff.tte_years(exp_date) if (bs and exp_date) else None
+        if bs and T and T > 0 and s_strike:
+            atm_iv = bs.implied_vol(s_prem, spot, s_strike, T, opt=opt_type)
+    except Exception as e:
+        log(f"IV solve fail ({e}) — wing falls back to min_strikes floor")
+    try:
+        w_sec, w_tsym, w_lot, w_strike = ss.wing_by_delta(
+            sym, spot, opt_type, s_off, hedge_delta, atm_iv, s_exp,
+            min_strikes=1, max_search=20, log=log, avoid=occ)
+    except Exception as e:
+        w_sec = None
+        log(f"wing resolve err: {e}")
+    if not w_sec:
+        return None, f"{opt_type} hedge wing resolve fail — no naked, abort"
+    occ.add(str(w_sec))
+    w_prem = _leg_ltp(w_sec)
+    if not w_prem:
+        return None, f"{w_tsym} wing premium nahi mila — abort (no naked)"
+    return {"opt_type": opt_type, "s_sec": str(s_sec), "s_tsym": s_tsym, "s_off": s_off,
+            "s_strike": s_strike, "s_exp": s_exp, "s_prem": s_prem, "lot_sz": lot_sz,
+            "atm_iv": atm_iv, "T": T, "bs": bs, "w_sec": str(w_sec), "w_tsym": w_tsym,
+            "w_lot": w_lot, "w_strike": w_strike, "w_prem": w_prem}, None
+
+
+def _leg_deltas(R, spot):
+    """|Δ| of sold leg and wing from the SAME back-solved IV (no extra broker call); None if BS n/a."""
+    try:
+        bs, T, iv = R.get("bs"), R.get("T"), R.get("atm_iv")
+        if not (bs and T and T > 0 and iv and iv > 0):
+            return None, None
+        ds = abs(bs.bs_delta(spot, R["s_strike"], T, iv, opt=R["opt_type"]))
+        dw = abs(bs.bs_delta(spot, R["w_strike"], T, iv, opt=R["opt_type"]))
+        return round(ds, 3), round(dw, 3)
+    except Exception:
+        return None, None
+
+
+def preview_structure(s):
+    """What the slot WOULD do right now (no order): legs (strike/LTP/Δ), net |Δ|/unit,
+    ₹ per index point, net credit, REAL hedged margin (risk_gate.position_margin = the same
+    number RMS charges) vs naked, and a ₹ projection for every enabled exit line."""
+    sym = str(s.get("sym", "")).upper()
+    lots = int(s.get("lots") or 1)
+    ex = s.get("exit") or {}
+    en = ex.get("enabled") or {}
+    opt_type, dir_ = ls.option_side(s)
+    out = {"ok": False, "sym": sym, "opt_type": opt_type, "dir": dir_}
+    if sym == "BTC":
+        ch = _btc_chain()
+        spot = float((ch or {}).get("spot") or 0)
+        if not ch or not spot:
+            out["msg"] = "Delta chain/spot nahi"
+            return out
+        k = "ce" if opt_type == "CE" else "pe"
+        rows = [r for r in ch["rows"] if r.get(k) and (r[k].get("ltp") or 0) > 0]
+        if not rows:
+            out["msg"] = "priced strikes nahi"; return out
+        atm = min(rows, key=lambda r: abs(r["strike"] - spot))
+        hd = float(s.get("hedge_delta") or 0.25)
+        otm = [r for r in rows if (r["strike"] > atm["strike"] if opt_type == "CE" else r["strike"] < atm["strike"]) and r[k].get("delta") is not None]
+        wing = min(otm, key=lambda r: abs(abs(float(r[k]["delta"])) - hd)) if otm else None
+        if not wing:
+            out["msg"] = "wing resolve fail"; return out
+        try:
+            import delta_ironfly_trader as dft
+            cv, usd_inr = dft.CONTRACT_VALUE.get("BTC", 0.001), dft._usd_inr()
+        except Exception:
+            cv, usd_inr = 0.001, 85.0
+        ds, dw = abs(float(atm[k]["delta"] or 0)), abs(float(wing[k]["delta"] or 0))
+        credit = float(atm[k]["ltp"]) - float(wing[k]["ltp"])
+        width = abs(atm["strike"] - wing["strike"])
+        unit_inr = cv * usd_inr * lots                       # ₹ per $1 of option price
+        out.update({"ok": True, "spot": spot, "cur": "$", "lot_size": None, "qty": lots,
+                    "legs": [{"side": "SELL", "sym": atm[k]["symbol"], "strike": atm["strike"], "ltp": atm[k]["ltp"], "delta": round(ds, 3)},
+                             {"side": "BUY", "sym": wing[k]["symbol"], "strike": wing["strike"], "ltp": wing[k]["ltp"], "delta": round(dw, 3)}],
+                    "net_delta": round(ds - dw, 3), "rs_per_pt": round((ds - dw) * unit_inr, 2),
+                    "credit_unit": round(credit, 2), "credit_rs": round(credit * unit_inr, 0),
+                    "margin_hedged": round(max(0.0, width - credit) * unit_inr, 0), "margin_naked": None,
+                    "max_loss_rs": round(max(0.0, width - credit) * unit_inr, 0)})
+    else:
+        spot = spot_now(sym)
+        if not spot:
+            out["msg"] = f"{sym} spot nahi mila (market band / poller idle)"; return out
+        R, err = _resolve_nse_structure(s, spot, set(), log=lambda m: None)
+        if not R:
+            out["msg"] = err; return out
+        ds, dw = _leg_deltas(R, spot)
+        q = lots * R["lot_sz"]
+        credit = R["s_prem"] - R["w_prem"]
+        legs_m = [{"sec_id": R["s_sec"], "entry": "SELL", "qty": q, "sym": R["s_tsym"], "entry_price": R["s_prem"], "segment": SEG},
+                  {"sec_id": R["w_sec"], "entry": "BUY", "qty": q, "sym": R["w_tsym"], "entry_price": R["w_prem"], "segment": SEG}]
+        mh = mn = None
+        try:
+            mb = rg.margin_breakdown(legs_m)
+            mh, mn = mb.get("hedged"), mb.get("standalone")
+        except Exception as e:
+            _log(f"margin preview fail: {e}")
+        nd = (ds - dw) if (ds is not None and dw is not None) else None
+        out.update({"ok": True, "spot": spot, "cur": "₹", "lot_size": R["lot_sz"], "qty": q, "atm_iv": round(R["atm_iv"], 4) if R.get("atm_iv") else None,
+                    "legs": [{"side": "SELL", "sym": R["s_tsym"], "strike": R["s_strike"], "ltp": R["s_prem"], "delta": ds},
+                             {"side": "BUY", "sym": R["w_tsym"], "strike": R["w_strike"], "ltp": R["w_prem"], "delta": dw}],
+                    "net_delta": round(nd, 3) if nd is not None else None,
+                    "rs_per_pt": round(nd * q, 2) if nd is not None else None,
+                    "credit_unit": round(credit, 2), "credit_rs": round(credit * q, 0),
+                    "margin_hedged": mh, "margin_naked": mn,
+                    "max_loss_rs": round(max(0.0, abs(R["s_strike"] - R["w_strike"]) - credit) * q, 0)})
+    # ── ₹ projection per enabled exit line (index space → ₹ via rs_per_pt; ₹ lines as typed)
+    proj = []
+    rpp = out.get("rs_per_pt")
+    anchor = float(s.get("level") or out.get("spot") or 0)
+    if en.get("rs"):
+        if ex.get("rs_sl"): proj.append({"src": "rs", "side": "sl", "rs": -abs(float(ex["rs_sl"]))})
+        if ex.get("rs_tg"): proj.append({"src": "rs", "side": "target", "rs": abs(float(ex["rs_tg"]))})
+    if en.get("ip") and rpp:
+        if ex.get("ip_sl"): proj.append({"src": "ip", "side": "sl", "pts": float(ex["ip_sl"]), "rs": -abs(float(ex["ip_sl"]) * rpp), "level": anchor - dir_ * float(ex["ip_sl"])})
+        if ex.get("ip_tg"): proj.append({"src": "ip", "side": "target", "pts": float(ex["ip_tg"]), "rs": abs(float(ex["ip_tg"]) * rpp), "level": anchor + dir_ * float(ex["ip_tg"])})
+    if en.get("il") and rpp and anchor:
+        for side, key in (("sl", "il_sl"), ("target", "il_tg")):
+            if ex.get(key):
+                lv = float(ex[key]); pts = (lv - anchor) * dir_
+                proj.append({"src": "il", "side": side, "pts": round(pts, 1), "rs": round(pts * rpp, 0), "level": lv})
+    out["projection"] = proj
+    out["note"] = "Δ-linear estimate (gamma/theta/IV change nahi gina) · anchor = key level (entry ke baad asli entry spot)"
+    return out
+
+
 # ─────────────────────────── NSE fire ───────────────────────────
 def _nse_fire(s):
     """Hedge-first credit spread on the slot's underlying. Returns (ok, msg, entry)."""
@@ -430,44 +583,11 @@ def _nse_fire(s):
         return False, f"{sym} spot abhi nahi mila — order NAHI bheja", None
     ref_px = float(s["level"]) if str(s.get("sell_leg")) == "level" else spot
 
-    # ── SELL leg (ATM at ref_px, offset 0) ──
-    s_sec, s_tsym, lot_sz, s_off = lc.clear_leg(sym, ref_px, opt_type, 0, occ,
-                                                dhan_master.get_option_contract, log=log)
-    if not s_sec:
-        return False, f"{opt_type} sell-leg resolve fail", None
-    occ.add(str(s_sec))
-    _x, _xt, _xl, s_strike, s_exp = dhan_master.get_option_contract_ex(sym, ref_px, opt_type, s_off)
-    lot_sz = int(lot_sz or _xl or 0)
-    if not lot_sz:
-        return False, f"lot size resolve nahi hua ({s_tsym}) — order NAHI bheja", None
-    s_prem = _leg_ltp(s_sec)
-    if not s_prem:
-        return False, f"{s_tsym} premium nahi mila — entry SKIP (₹0 fill kabhi nahi, TRAP #1)", None
-
-    # ── IV back-solve → wing by delta (analytic walk, zero extra broker calls) ──
-    atm_iv = None
-    try:
-        import payoff
-        bs = payoff._bs()
-        exp_date = datetime.strptime(s_exp, "%Y-%m-%d %H:%M:%S").date() if s_exp else None
-        T = payoff.tte_years(exp_date) if (bs and exp_date) else None
-        if bs and T and T > 0 and s_strike:
-            atm_iv = bs.implied_vol(s_prem, spot, s_strike, T, opt=opt_type)
-    except Exception as e:
-        log(f"IV solve fail ({e}) — wing falls back to min_strikes floor")
-    try:
-        w_sec, w_tsym, w_lot, w_strike = ss.wing_by_delta(
-            sym, spot, opt_type, s_off, hedge_delta, atm_iv, s_exp,
-            min_strikes=1, max_search=20, log=log, avoid=occ)
-    except Exception as e:
-        w_sec = None
-        log(f"wing resolve err: {e}")
-    if not w_sec:
-        return False, f"{opt_type} hedge wing resolve fail — no naked, abort", None
-    occ.add(str(w_sec))
-    w_prem = _leg_ltp(w_sec)
-    if not w_prem:
-        return False, f"{w_tsym} wing premium nahi mila — abort (no naked)", None
+    R, err = _resolve_nse_structure(s, spot, occ, log=log)
+    if not R:
+        return False, err, None
+    s_sec, s_tsym, lot_sz, s_strike = R["s_sec"], R["s_tsym"], R["lot_sz"], R["s_strike"]
+    s_prem, w_sec, w_tsym, w_strike, w_prem = R["s_prem"], R["w_sec"], R["w_tsym"], R["w_strike"], R["w_prem"]
 
     # ── single whole-structure gate (RMS + real basket margin + smart size-down) ──
     try:

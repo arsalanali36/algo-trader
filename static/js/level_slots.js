@@ -180,6 +180,7 @@
           <div class="rule ${en.il ? '' : 'off'}"><div class="tog ${on(en.il)}" data-en="il"></div><div class="lab"><b>Index price</b><small>apna level — cross pe exit</small></div><input data-ex="il_sl" placeholder="SL level" value="${ex.il_sl ?? ''}"><input data-ex="il_tg" placeholder="Target level" value="${ex.il_tg ?? ''}"></div>
           <div class="perpt">jo pehle chhuye wahi poori group square off — shorts pehle, wings baad${isBTC(sym) ? ' · Delta paper (own engine, wick mode)' : ''}</div>
         </div>
+        <div class="sec" id="projSec"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)">Projection · abhi ke strike/Δ/margin se</span><button class="cbtn" id="projBtn">🔄 calc</button></div><div id="proj" class="perpt">— (calc dabao)</div></div>
         <div class="sec"><div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Exit confirmation (index triggers)</div>
           <div class="tfrow">TF = slot TF (${F.tf || '5m'})</div>
           <div class="radios" id="cmGrp">
@@ -224,12 +225,36 @@
     document.querySelectorAll('#chDays button').forEach(b => b.onclick = () => { try { localStorage.setItem(DAYS_KEY, b.dataset.days); } catch (e) {} document.querySelectorAll('#chDays button').forEach(x => x.classList.remove('on')); b.classList.add('on'); loadChart(true); });
     $('drawBtn').onclick = () => { drawMode = !drawMode; $('drawBtn').classList.toggle('on', drawMode); toast(drawMode ? 'chart pe click karo → line' : 'line mode off'); };
     $('fsBtn').onclick = toggleFs;
+    $('projBtn').onclick = () => loadProjection(true);
+    if (window._projCache && window._projCache.id === cur) renderProjection(window._projCache.d);
     $('rstBtn').onclick = () => resetView();
     loadUserLines();
     loadChart(chartKey !== cur + '|' + (F.tf || '5m'));
   }
-  let redrawT = null;
-  function redrawSoon() { clearTimeout(redrawT); redrawT = setTimeout(() => loadChart(false), 250); }
+  let redrawT = null, projT = null;
+  function redrawSoon() { clearTimeout(redrawT); redrawT = setTimeout(() => loadChart(false), 250); clearTimeout(projT); projT = setTimeout(() => { if (window._projCache && window._projCache.id === cur) loadProjection(false); }, 900); }
+  const money = (v) => (v == null || isNaN(v)) ? '—' : (v < 0 ? '−' : '+') + '₹' + Math.abs(Math.round(v)).toLocaleString('en-IN');
+  async function loadProjection(user) {
+    const el = $('proj'); if (!el || !F) return;
+    if (!F.level) { el.textContent = 'pehle Key level do'; return; }
+    if (user) el.textContent = 'resolving legs…';
+    const body = { level: F.level, zone: F.zone, zone_unit: F.zone_unit, from_dir: F.from_dir, sell_leg: F.sell_leg, hedge_delta: F.hedge_delta, lots: F.lots, exit: F.exit, contract: F.contract };
+    const d = await api('/api/level-slots/' + encodeURIComponent(cur) + '/preview', { method: 'POST', body: JSON.stringify(body) });
+    window._projCache = { id: cur, d };
+    renderProjection(d);
+  }
+  function renderProjection(d) {
+    const el = $('proj'); if (!el) return;
+    if (!d || !d.ok) { el.innerHTML = '<span style="color:var(--red)">' + ((d && d.msg) || 'fail') + '</span>'; return; }
+    const C = d.cur || '₹';
+    const legs = (d.legs || []).map(l => `<div><span style="color:${l.side === 'SELL' ? 'var(--red)' : 'var(--green)'}">${l.side}</span> ${l.sym} · strike ${fmt(l.strike, 0)} · LTP ${C}${fmt(l.ltp, 2)} · Δ ${l.delta == null ? '—' : l.delta}</div>`).join('');
+    const rows = (d.projection || []).map(p => `<div><span style="color:${p.side === 'sl' ? 'var(--red)' : 'var(--green)'}">${p.side === 'sl' ? 'SL' : 'Target'}</span> <span style="color:var(--muted)">${p.src === 'rs' ? C + ' combined' : p.src === 'ip' ? 'index pt' : 'index price'}${p.pts != null ? ' · ' + fmt(p.pts, 1) + ' pt' : ''}${p.level != null ? ' @ ' + fmt(p.level, 1) : ''}</span> → <b style="color:${p.rs < 0 ? 'var(--red)' : 'var(--green)'}">${C === '₹' ? money(p.rs) : (p.rs < 0 ? '−' : '+') + '₹' + Math.abs(Math.round(p.rs)).toLocaleString('en-IN')}</b></div>`).join('') || '<div style="color:var(--muted)">koi exit line enabled/typed nahi</div>';
+    el.innerHTML = `${legs}
+      <div style="margin-top:4px">net |Δ| <b>${d.net_delta == null ? '—' : d.net_delta}</b>/unit · <b>${d.rs_per_pt == null ? '—' : '₹' + fmt(d.rs_per_pt, 1)}</b> per index pt · qty ${d.qty}${d.lot_size ? ' (lot ' + d.lot_size + ')' : ''} · credit ${C}${fmt(d.credit_unit, 2)}/unit = <b>${money(d.credit_rs)}</b>${d.atm_iv ? ' · IV ' + (d.atm_iv * 100).toFixed(1) + '%' : ''}</div>
+      <div>margin (entry) <b style="color:var(--text)">₹${fmt(d.margin_hedged, 0)}</b> hedged${d.margin_naked ? ' <span style="color:var(--muted)">(naked hota ₹' + fmt(d.margin_naked, 0) + ')</span>' : ''} · max loss (wing cap) <b>₹${fmt(d.max_loss_rs, 0)}</b></div>
+      <div style="margin-top:4px;border-top:1px solid var(--border2);padding-top:4px">${rows}</div>
+      <div style="color:var(--muted);margin-top:3px">${d.note || ''}</div>`;
+  }
   function grp(id, key, fn) { const g = $(id); if (!g) return; g.querySelectorAll('button').forEach(b => b.onclick = () => { g.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); fn(b.dataset[key]); }); }
   const zoneAbs = (f) => f.zone_unit === 'pct' ? (Number(f.level) || 0) * (Number(f.zone) || 0) / 100 : (Number(f.zone) || 0);
   const zoneLo = (f) => (Number(f.level) || 0) - zoneAbs(f), zoneHi = (f) => (Number(f.level) || 0) + zoneAbs(f);

@@ -7996,6 +7996,25 @@ def api_level_slots_chart(slot_id):
         return jsonify({"ok": False, "msg": str(e), "bars": []})
 
 
+@app.route('/api/level-slots/<path:slot_id>/preview', methods=['POST'])
+def api_level_slots_preview(slot_id):
+    """What-if for the slot as CURRENTLY typed (unsaved form values merged over the saved slot):
+    legs (strike/LTP/Δ), net Δ, ₹/index-pt, credit, real hedged margin, ₹ per exit line. Read-only."""
+    try:
+        import level_slots as ls
+        import level_slots_live as L
+        s = ls.get_slot(slot_id)
+        if not s:
+            return jsonify({"ok": False, "msg": "slot nahi mila"})
+        body = request.get_json(silent=True) or {}
+        for k in ("level", "zone", "zone_unit", "from_dir", "sell_leg", "hedge_delta", "lots", "exit", "contract"):
+            if k in body and body[k] is not None:
+                s[k] = body[k]
+        return jsonify(L.preview_structure(s))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/level-slots/<path:slot_id>/arm', methods=['POST'])
 def api_level_slots_arm(slot_id):
     try:
