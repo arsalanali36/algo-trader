@@ -199,16 +199,16 @@
 
     // ── bind
     const bind = (id, k, num) => { const el = $(id); if (el) el.oninput = () => { F[k] = num ? (el.value === '' ? null : Number(el.value)) : el.value; $('hint').innerHTML = hintText(F, s); }; };
-    bind('fLevel', 'level', true); bind('fZone', 'zone', true); bind('fHd', 'hedge_delta', true); bind('fLots', 'lots', true); bind('fVt', 'valid_till');
+    bind('fLevel', 'level', true); bind('fZone', 'zone', true); ['fLevel', 'fZone'].forEach(id => { const el = $(id); if (el) el.addEventListener('input', redrawSoon); }); bind('fHd', 'hedge_delta', true); bind('fLots', 'lots', true); bind('fVt', 'valid_till');
     if ($('fTf')) $('fTf').onchange = () => { F.tf = $('fTf').value; loadChart(true); };
     if ($('fSell')) $('fSell').onchange = () => F.sell_leg = $('fSell').value;
     grp('fromGrp', 'from', (v) => { F.from_dir = v; render(); });
-    grp('zuGrp', 'zu', (v) => { F.zone_unit = v; $('hint').innerHTML = hintText(F, s); });
+    grp('zuGrp', 'zu', (v) => { F.zone_unit = v; $('hint').innerHTML = hintText(F, s); redrawSoon(); });
     grp('ecGrp', 'ec', (v) => F.entry_confirm = v);
     grp('optGrp', 'opt', (v) => { F.contract = Object.assign({}, F.contract || {}, { opt: v, sec_id: null, strike: null }); loadStrikes(); });
     document.querySelectorAll('[data-pat]').forEach(c => c.onchange = () => { F.patterns = [...document.querySelectorAll('[data-pat]:checked')].map(x => x.dataset.pat); });
-    document.querySelectorAll('[data-en]').forEach(t => t.onclick = () => { F.exit = F.exit || {}; F.exit.enabled = F.exit.enabled || {}; F.exit.enabled[t.dataset.en] = !F.exit.enabled[t.dataset.en]; t.classList.toggle('on'); t.parentNode.classList.toggle('off', !t.classList.contains('on')); });
-    document.querySelectorAll('[data-ex]').forEach(i => i.oninput = () => { F.exit = F.exit || {}; F.exit[i.dataset.ex] = i.value === '' ? null : Number(i.value); });
+    document.querySelectorAll('[data-en]').forEach(t => t.onclick = () => { F.exit = F.exit || {}; F.exit.enabled = F.exit.enabled || {}; F.exit.enabled[t.dataset.en] = !F.exit.enabled[t.dataset.en]; t.classList.toggle('on'); t.parentNode.classList.toggle('off', !t.classList.contains('on')); redrawSoon(); });
+    document.querySelectorAll('[data-ex]').forEach(i => i.oninput = () => { F.exit = F.exit || {}; F.exit[i.dataset.ex] = i.value === '' ? null : Number(i.value); redrawSoon(); });
     document.querySelectorAll('#cmGrp .radio').forEach(r => r.onclick = (ev) => { if (ev.target.tagName === 'INPUT') return; F.exit = F.exit || {}; F.exit.confirm_mode = r.dataset.cm; document.querySelectorAll('#cmGrp .radio').forEach(x => x.classList.remove('on')); r.classList.add('on'); });
     document.querySelectorAll('#chTf button').forEach(b => b.onclick = () => { F.tf = b.dataset.tf; if ($('fTf')) $('fTf').value = b.dataset.tf; document.querySelectorAll('#chTf button').forEach(x => x.classList.remove('on')); b.classList.add('on'); loadChart(true); });
     if ($('saveBtn')) $('saveBtn').onclick = save;
@@ -222,6 +222,8 @@
     loadUserLines();
     loadChart(chartKey !== cur + '|' + (F.tf || '5m'));
   }
+  let redrawT = null;
+  function redrawSoon() { clearTimeout(redrawT); redrawT = setTimeout(() => loadChart(false), 250); }
   function grp(id, key, fn) { const g = $(id); if (!g) return; g.querySelectorAll('button').forEach(b => b.onclick = () => { g.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); fn(b.dataset[key]); }); }
   const zoneAbs = (f) => f.zone_unit === 'pct' ? (Number(f.level) || 0) * (Number(f.zone) || 0) / 100 : (Number(f.zone) || 0);
   const zoneLo = (f) => (Number(f.level) || 0) - zoneAbs(f), zoneHi = (f) => (Number(f.level) || 0) + zoneAbs(f);
@@ -324,10 +326,18 @@
     if (F.level) { add(F.level, '#58a6ff', 'LVL'); if (zoneAbs(F) > 0) { add(zoneLo(F), '#58a6ff', 'zone', true); add(zoneHi(F), '#58a6ff', 'zone', true); } }
     const ss = d.slot || s, e = ss.entry || {}, ex = ss.exit || {}, en = ex.enabled || {};
     if (ss.pattern && ss.pattern.break_level) add(ss.pattern.break_level, '#d29922', 'break', true);
-    if (e.spot && ss.kind === 'idx') {
-      const dir = e.dir || (ss.from_dir === 'above' ? 1 : -1);
-      if (en.ip) { if (ex.ip_sl) add(e.spot - dir * ex.ip_sl, '#f85149', 'SL', true); if (ex.ip_tg) add(e.spot + dir * ex.ip_tg, '#3fb950', 'TG', true); }
-      if (en.il) { if (ex.il_sl) add(ex.il_sl, '#f85149', 'SL', true); if (ex.il_tg) add(ex.il_tg, '#3fb950', 'TG', true); }
+    // SL / Target lines — after entry anchored on the REAL entry spot (server-frozen); before
+    // entry PROJECTED from the key level (entry lagbhag level ke paas hi hoti hai) so the user
+    // sees where the exits will sit while setting the slot. Uses the UNSAVED form values (F).
+    if (ss.kind === 'idx') {
+      const exF = F.exit || {}, enF = exF.enabled || {};
+      const entered = !!e.spot, anchor = entered ? e.spot : Number(F.level);
+      const dir = entered ? (e.dir || (ss.from_dir === 'above' ? 1 : -1)) : (F.from_dir === 'above' ? 1 : -1);
+      const sfx = entered ? '' : ' (proj)';
+      if (anchor) {
+        if (enF.ip) { if (exF.ip_sl) add(anchor - dir * exF.ip_sl, '#f85149', 'SL' + sfx, true); if (exF.ip_tg) add(anchor + dir * exF.ip_tg, '#3fb950', 'TG' + sfx, true); }
+        if (enF.il) { if (exF.il_sl) add(exF.il_sl, '#f85149', 'SL', true); if (exF.il_tg) add(exF.il_tg, '#3fb950', 'TG', true); }
+      }
     }
     const mk = [];
     if (ss.pattern && ss.pattern.ts) mk.push({ time: ss.pattern.ts, position: ss.from_dir === 'above' ? 'belowBar' : 'aboveBar', color: '#d29922', shape: ss.from_dir === 'above' ? 'arrowUp' : 'arrowDown', text: ss.pattern.name });
@@ -344,7 +354,7 @@
   }
 
   // ───────────── boot ─────────────
-  window.LS = { refresh, D: () => D };
+  window.LS = { refresh, D: () => D, lines: () => lines.map(l => { try { return l.options().title + '@' + l.options().price; } catch (e) { return '?'; } }) };
   refresh(true);
   pollT = setInterval(() => { if (!document.hidden) { const keepF = F; refresh(false).then(() => { /* keep unsaved edits */ if (keepF && Fid === cur) F = keepF; }); } }, 10000);
 })();
