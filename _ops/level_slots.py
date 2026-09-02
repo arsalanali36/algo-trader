@@ -96,11 +96,12 @@ def _read():
         if isinstance(d, dict):
             d.setdefault("underlyings", {})
             d.setdefault("slots", {})
+            d.setdefault("watchlists", {})
             d.setdefault("day", _today())
             return d
     except Exception:
         pass
-    return {"underlyings": {}, "slots": {}, "day": _today()}
+    return {"underlyings": {}, "slots": {}, "watchlists": {}, "day": _today()}
 
 
 def _write(d):
@@ -199,6 +200,46 @@ def _blank_slot(sym, sid):
                  "confirm_mode": "close", "confirm_min": 2},
         "status": "idle", "fired": False, "events": [], "last_msg": "",
     }
+
+
+# ─────────────────────────── watchlists (named symbol lists) ───────────────────────────
+def list_watchlists():
+    with _LOCK:
+        d = _read()
+        return dict(d.get("watchlists") or {})
+
+
+def save_watchlist(name, symbols):
+    """Upsert a named list. symbols = list of underlying symbols (upper-cased, de-duped,
+    order kept). Empty name refused; empty list allowed (user fills later)."""
+    name = str(name or "").strip()[:40]
+    if not name:
+        return False, "watchlist ka naam do"
+    seen, syms = set(), []
+    for x in (symbols or []):
+        x = str(x).upper().strip()
+        if x and x not in seen:
+            seen.add(x); syms.append(x)
+    with _LOCK:
+        d = _read()
+        wl = d.setdefault("watchlists", {})
+        row = wl.get(name) or {"name": name, "created_ts": int(time.time())}
+        row["symbols"] = syms
+        row["updated_ts"] = int(time.time())
+        wl[name] = row
+        _write(d)
+        return True, dict(row)
+
+
+def delete_watchlist(name):
+    with _LOCK:
+        d = _read()
+        wl = d.setdefault("watchlists", {})
+        if name not in wl:
+            return False, "watchlist nahi mili"
+        wl.pop(name, None)
+        _write(d)
+        return True, "deleted"
 
 
 # ─────────────────────────── slots CRUD ───────────────────────────

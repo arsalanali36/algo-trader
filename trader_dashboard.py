@@ -7978,6 +7978,42 @@ def api_level_slots_contracts():
         return jsonify({"ok": False, "msg": str(e), "rows": []})
 
 
+@app.route('/api/level-slots/watchlists', methods=['GET'])
+def api_level_slots_watchlists():
+    try:
+        import level_slots as ls
+        return jsonify({"ok": True, "watchlists": ls.list_watchlists()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "watchlists": {}})
+
+
+@app.route('/api/level-slots/watchlists', methods=['POST'])
+def api_level_slots_watchlist_save():
+    """Upsert {name, symbols[]}. Symbols are validated against the F&O universe (or BTC)."""
+    try:
+        import level_slots as ls
+        import level_slots_live as L
+        body = request.get_json(silent=True) or {}
+        syms = [str(x).upper().strip() for x in (body.get("symbols") or [])]
+        bad = [x for x in syms if x and x != "BTC" and not L.is_fno_underlying(x)]
+        if bad:
+            return jsonify({"ok": False, "msg": f"F&O me nahi: {', '.join(bad[:5])}"})
+        ok, res = ls.save_watchlist(body.get("name"), syms)
+        return jsonify({"ok": ok, "msg": res if not ok else "saved", "watchlist": res if ok else None})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/level-slots/watchlists/<path:name>', methods=['DELETE'])
+def api_level_slots_watchlist_delete(name):
+    try:
+        import level_slots as ls
+        ok, msg = ls.delete_watchlist(name)
+        return jsonify({"ok": ok, "msg": msg})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/level-slots/<path:slot_id>/chart')
 def api_level_slots_chart(slot_id):
     """Closed candles at the slot's TF (or ?tf=) + the slot itself for overlays. Read-only."""

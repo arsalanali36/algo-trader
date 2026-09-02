@@ -51,7 +51,7 @@
   function renderTabs() {
     const syms = Object.keys(D.underlyings);
     const src = (s) => isBTC(s) ? 'Delta · crypto' : (['NIFTY', 'BANKNIFTY'].includes(s) ? 'NSE · index' : 'NSE · stock');
-    $('itabs').innerHTML = syms.map(s => `<button class="itab ${s === ix ? 'on' : ''}" data-sym="${s}">
+    $('itabs').innerHTML = syms.filter(wlVisible).map(s => `<button class="itab ${s === ix ? 'on' : ''}" data-sym="${s}">
         <span class="nm">${s}${D.fixed.includes(s) ? '' : `<span class="x" data-rm="${s}" title="remove">✕</span>`}</span>
         <span class="px">${isBTC(s) ? '$' : ''}${fmt(D.prices[s], isBTC(s) ? 0 : 1)}</span>
         <span class="foot"><span class="src">${src(s)}</span><span class="dots">${slotsOf(s).map(x => `<i class="dot ${x.status}"></i>`).join('')}</span></span>
@@ -415,9 +415,44 @@
     $('log').textContent = s && s.events && s.events.length ? s.events.slice().reverse().join('\n') : '—';
   }
 
+  // ───────────── watchlists (named symbol lists, server-side) ─────────────
+  const WL = { lists: {}, cur: null, filter: false };
+  try { WL.cur = localStorage.getItem('ls_wl_cur') || null; WL.filter = localStorage.getItem('ls_wl_filter') === '1'; } catch (e) {}
+  async function wlLoad() { const d = await api('/api/level-slots/watchlists'); if (d.ok) { WL.lists = d.watchlists || {}; if (!WL.cur || !WL.lists[WL.cur]) WL.cur = Object.keys(WL.lists)[0] || null; } wlRender(); }
+  function wlRender() {
+    const sel = $('wlSel'); if (!sel) return;
+    const names = Object.keys(WL.lists);
+    sel.innerHTML = names.length ? names.map(n => `<option ${n === WL.cur ? 'selected' : ''}>${n}</option>`).join('') : '<option value="">(koi list nahi — ＋ New)</option>';
+    const l = WL.cur ? WL.lists[WL.cur] : null; const have = Object.keys(D.underlyings);
+    $('wlChips').innerHTML = l ? (l.symbols.map(x => `<span class="wlchip ${have.includes(x) ? 'open' : ''}" title="${have.includes(x) ? 'tab khula hai' : 'tab nahi'}">${x}<span data-rm="${x}">✕</span></span>`).join('') || '<span style="color:var(--muted);font-size:11px">symbol add karo ↑</span>') : '';
+    $('wlChips').querySelectorAll('[data-rm]').forEach(x => x.onclick = () => wlSave(WL.cur, l.symbols.filter(y => y !== x.dataset.rm)));
+    $('wlFilter').checked = WL.filter;
+    $('wlBtn').textContent = '📋 ' + (WL.cur && WL.filter ? WL.cur : 'Watchlist') + ' ▾';
+  }
+  async function wlSave(name, symbols) {
+    const d = await api('/api/level-slots/watchlists', { method: 'POST', body: JSON.stringify({ name, symbols }) });
+    if (!d.ok) { toast(d.msg, 'bad'); return; }
+    WL.lists[name] = d.watchlist; WL.cur = name; try { localStorage.setItem('ls_wl_cur', name); } catch (e) {}
+    wlRender(); renderTabs();
+  }
+  function wlVisible(sym) { if (!WL.filter || !WL.cur || !WL.lists[WL.cur]) return true; return WL.lists[WL.cur].symbols.includes(sym) || sym === ix; }
+  let wlT = null;
+  function wlBind() {
+    const btn = $('wlBtn'); if (!btn) return;
+    btn.onclick = (e) => { e.stopPropagation(); $('wlPanel').classList.toggle('on'); if ($('wlPanel').classList.contains('on')) wlLoad(); };
+    $('wlPanel').onclick = (e) => e.stopPropagation();
+    document.addEventListener('click', () => $('wlPanel').classList.remove('on'));
+    $('wlSel').onchange = () => { WL.cur = $('wlSel').value || null; try { localStorage.setItem('ls_wl_cur', WL.cur || ''); } catch (e) {} wlRender(); renderTabs(); };
+    $('wlNew').onclick = () => { const n = prompt('Watchlist ka naam:'); if (n && n.trim()) wlSave(n.trim(), []); };
+    $('wlDel').onclick = async () => { if (!WL.cur || !confirm(WL.cur + ' watchlist hatayen? (tabs/slots pe asar nahi)')) return; const d = await api('/api/level-slots/watchlists/' + encodeURIComponent(WL.cur), { method: 'DELETE' }); if (!d.ok) { toast(d.msg, 'bad'); return; } delete WL.lists[WL.cur]; WL.cur = Object.keys(WL.lists)[0] || null; wlRender(); renderTabs(); };
+    $('wlFilter').onchange = () => { WL.filter = $('wlFilter').checked; try { localStorage.setItem('ls_wl_filter', WL.filter ? '1' : '0'); } catch (e) {} wlRender(); renderTabs(); };
+    $('wlOpen').onclick = async () => { const l = WL.cur && WL.lists[WL.cur]; if (!l) return; let n = 0; for (const sym of l.symbols) { if (!D.underlyings[sym]) { const d = await api('/api/level-slots/underlying', { method: 'POST', body: JSON.stringify({ sym }) }); if (d.ok) n++; else toast(sym + ': ' + d.msg, 'bad'); } } toast(n + ' naye tab khule', 'ok'); await refresh(true); wlRender(); };
+    $('wlQ').oninput = () => { clearTimeout(wlT); wlT = setTimeout(async () => { const q = ($('wlQ').value || '').toUpperCase(); const sug = $('wlSug'); if (!q) { sug.style.display = 'none'; return; } const d = await api('/api/level-slots/search?q=' + encodeURIComponent(q)); const list = [...['NIFTY', 'BANKNIFTY', 'BTC'].filter(x => x.includes(q)), ...(d.symbols || [])].slice(0, 12); sug.innerHTML = list.map(x => `<div data-s="${x}">${x}</div>`).join('') || '<div style="color:var(--muted)">no match</div>'; sug.style.display = 'block'; sug.querySelectorAll('[data-s]').forEach(el => el.onclick = () => { if (!WL.cur) { toast('pehle ＋ New se list banao', 'bad'); return; } const l = WL.lists[WL.cur]; wlSave(WL.cur, [...l.symbols, el.dataset.s]); $('wlQ').value = ''; sug.style.display = 'none'; }); }, 150); };
+  }
+
   // ───────────── boot ─────────────
   window.LS = { refresh, D: () => D, lines: () => lines.map(l => { try { return l.options().title + '@' + l.options().price; } catch (e) { return '?'; } }) };
-  const boot = () => { refresh(true); };
+  const boot = () => { wlBind(); wlLoad(); refresh(true); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   pollT = setInterval(() => { if (!document.hidden) { const keepF = F; refresh(false).then(() => { /* keep unsaved edits */ if (keepF && Fid === cur) F = keepF; }); } }, 10000);
 })();

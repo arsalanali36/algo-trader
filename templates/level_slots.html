@@ -43,6 +43,18 @@
   .pick li { display:flex; justify-content:space-between; padding:6px 12px; cursor:pointer; font-size:12px; }
   .pick li:hover { background:#1f6feb22; } .pick li.dis { opacity:.4; cursor:default; }
   .ixnote { font-size:11px; color:var(--muted); font-family:var(--mono); padding:0 2px; }
+  .wlwrap { position:relative; }
+  .wlpanel { position:absolute; top:calc(100% + 6px); right:0; z-index:30; width:340px; background:var(--panel); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px #0008; padding:10px; display:none; flex-direction:column; gap:8px; }
+  .wlpanel.on { display:flex; }
+  .wlrow { display:flex; gap:6px; align-items:center; position:relative; }
+  .wlrow select,.wlrow input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:6px 8px; font-family:var(--mono); font-size:12px; color:var(--text); min-width:0; }
+  .wlsug { position:absolute; top:100%; left:0; right:0; background:var(--panel2); border:1px solid var(--border); border-radius:6px; max-height:180px; overflow:auto; display:none; z-index:5; }
+  .wlsug div { padding:5px 10px; cursor:pointer; font-size:12px; font-family:var(--mono); } .wlsug div:hover { background:#1f6feb22; }
+  .wlchips { display:flex; flex-wrap:wrap; gap:6px; min-height:22px; }
+  .wlchip { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--border); border-radius:14px; padding:2px 8px; font-size:11px; font-family:var(--mono); }
+  .wlchip span { cursor:pointer; color:var(--muted); } .wlchip span:hover { color:var(--red); }
+  .wlchip.open { border-color:var(--blue); }
+  @media (max-width:760px) { .wlpanel { width:calc(100vw - 30px); } }
   /* slot tabs */
   .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   .stabs { display:flex; border-bottom:1px solid var(--border); background:var(--panel2); }
@@ -136,6 +148,13 @@
     <span class="sub">key-level → candle pattern → next-candle break → hedged credit spread</span>
     <span class="badge" id="modeBadge">PAPER</span>
     <span class="sp" style="flex:1"></span>
+    <div class="wlwrap"><button class="btn" id="wlBtn">📋 Watchlist ▾</button>
+      <div class="wlpanel" id="wlPanel">
+        <div class="wlrow"><select id="wlSel"></select><button class="cbtn" id="wlNew" title="nayi list">＋ New</button><button class="cbtn" id="wlDel" title="ye list hatao">🗑</button></div>
+        <div class="wlrow"><input id="wlQ" placeholder="symbol add… (RELIANCE, SBIN, BTC)"><div id="wlSug" class="wlsug"></div></div>
+        <div id="wlChips" class="wlchips"></div>
+        <div class="wlrow" style="justify-content:space-between"><label style="font-size:11px;display:flex;gap:5px;align-items:center;cursor:pointer"><input type="checkbox" id="wlFilter"> sirf is list ke tabs dikhao</label><button class="btn pri" id="wlOpen" title="list ke saare symbols ko tabs me kholo">Open all as tabs</button></div>
+      </div></div>
     <button class="btn" onclick="LS.refresh(true)">↻ Refresh</button>
   </div>
   <div class="itabs" id="itabs"></div>
