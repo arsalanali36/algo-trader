@@ -1021,6 +1021,8 @@ delta_ironfly_trader.py — Delta Exchange India daily BTC Iron-Fly (PAPER, forw
 - 🔧 `run_loop` — …
 - 🔧 `settle_value` — Cash-settlement intrinsic per-BTC for one leg.
 - 🔧 `should_enter` — True if it's the entry window, feature on, and no open position today.
+- 🔧 `testnet_close_held` — Close whatever the testnet account ACTUALLY holds of `legs` with opposite market
+- 🔧 `testnet_place_leg` — ONE Delta testnet market order → (fill_price|None, why, order_id). The single home
 - 🔧 `tick` — …
 
 ### `_ops/delta_testnet_check.py`

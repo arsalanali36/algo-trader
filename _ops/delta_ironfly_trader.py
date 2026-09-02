@@ -422,6 +422,39 @@ def _reconcile_testnet(broker, pos, log):
     return status
 
 
+def testnet_place_leg(broker, side, symbol, lots, log=print):
+    """ONE Delta testnet market order → (fill_price|None, why, order_id). The single home
+    for Delta order calls (architecture_audit RAW-ORDER allowlist) — other modules
+    (level_slots_live) call this, never broker.place_order() directly. Uses _fill_of
+    (TRAP #202: only a real fill counts)."""
+    try:
+        r = broker.place_order(side, symbol, qty=int(lots), order_type="MARKET")
+    except Exception as e:
+        return None, f"exception {e}", None
+    fill, why = _fill_of(r)
+    if fill is None:
+        log(f"[delta] {side} {symbol} NOT FILLED: {why}")
+    return fill, why, (r or {}).get("order_id")
+
+
+def testnet_close_held(broker, legs, log=print):
+    """Close whatever the testnet account ACTUALLY holds of `legs` with opposite market
+    orders. Returns {symbol: exit_fill} for legs closed now; a leg already flat (settled)
+    is skipped; an unfilled close returns None (caller retries, never half-closes)."""
+    held_map = broker.positions()
+    out = {}
+    for lg in legs:
+        held = abs(int(held_map.get(lg["symbol"], 0) or 0))
+        if held <= 0:
+            continue
+        opp = "SELL" if lg["side"] == "BUY" else "BUY"
+        fill, why, _oid = testnet_place_leg(broker, opp, lg["symbol"], held, log)
+        if fill is None:
+            return None
+        out[lg["symbol"]] = float(fill)
+    return out
+
+
 def enter_testnet(cfg, st, now_utc, log=print):
     b = _testnet_broker()
     if b is None:

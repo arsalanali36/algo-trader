@@ -728,18 +728,70 @@ def _btc_fire(s):
              "strike": wing["strike"], "delta": wing[side_key].get("delta")},
             {"symbol": atm[side_key]["symbol"], "side": "SELL", "entry_fill": float(atm[side_key]["ltp"]),
              "strike": atm["strike"], "delta": atm[side_key].get("delta")}]
+    # ── TESTNET (Delta demo): real orders, wing BUY first, unwind on any unfilled leg,
+    #    reconcile against the broker's own positions (same discipline as 11.01)
+    b = None
+    try:
+        b = dft._testnet_broker() if dft is not None else None
+    except Exception as e:
+        _log(f"testnet broker init fail: {e}")
+    testnet = False
+    reconcile = None
+    if b is not None:
+        try:
+            prods = b._products()
+            live = {sym for sym, pr in prods.items() if pr.get("state") == "live"}
+        except Exception as e:
+            _log(f"testnet products fail: {e} — falling back to sim")
+            live = set()
+
+        def _snap(sym):
+            """mainnet-chosen symbol → testnet-listed symbol (same type+expiry, nearest strike)."""
+            if sym in live:
+                return sym
+            try:
+                cp, und, k, code = sym.split("-")
+                cands = []
+                for x in live:
+                    px = x.split("-")
+                    if len(px) == 4 and px[0] == cp and px[1] == und and px[3] == code:
+                        cands.append((abs(int(px[2]) - int(k)), x))
+                return min(cands)[1] if cands else None
+            except Exception:
+                return None
+        w_sym, s_sym = _snap(legs[0]["symbol"]), _snap(legs[1]["symbol"])
+        if not w_sym or not s_sym or w_sym == s_sym:
+            _log(f"testnet strike snap fail ({legs[0]['symbol']}→{w_sym}, {legs[1]['symbol']}→{s_sym}) — sim fallback")
+        else:
+            legs[0]["symbol"], legs[1]["symbol"] = w_sym, s_sym
+            placed = []
+            for lg in legs:                                 # BUY wing first, then SELL
+                fill, why, oid = dft.testnet_place_leg(b, lg["side"], lg["symbol"], lots, _log)
+                if fill is None:
+                    _log(f"testnet leg NOT FILLED {lg['side']} {lg['symbol']}: {why} — unwinding")
+                    dft._unwind_testnet(b, placed, lots, _log)
+                    return False, f"[TESTNET] {lg['side']} {lg['symbol']} not filled ({why}) — unwound, no position", None
+                lg["entry_fill"] = float(fill)
+                lg["order_id"] = oid
+                placed.append(lg)
+            reconcile = dft._reconcile_testnet(b, {"lots": lots, "legs": placed}, _log)
+            if reconcile != "match":
+                dft._unwind_testnet(b, placed, lots, _log)
+                return False, f"[TESTNET] reconcile {reconcile} — unwound, no position", None
+            testnet = True
     if dft is not None:
         for lg in legs:
             dft._record_leg(lg, cv=cv, lots=lots, group_id=gid, action="entry", mode="paper",
                             strategy=SID, log=_log)
     credit = legs[1]["entry_fill"] - legs[0]["entry_fill"]
-    entry = {"group_id": gid, "btc": True, "spot": spot, "ts": int(time.time()), "legs": legs,
-             "lots": lots, "cv": cv, "usd_inr": usd_inr, "expiry": ch.get("expiry"),
-             "expiry_date": ch.get("expiry_date"), "credit": round(credit, 2),
+    entry = {"group_id": gid, "btc": True, "testnet": testnet, "reconcile": reconcile, "spot": spot,
+             "ts": int(time.time()), "legs": legs, "lots": lots, "cv": cv, "usd_inr": usd_inr,
+             "expiry": ch.get("expiry"), "expiry_date": ch.get("expiry_date"), "credit": round(credit, 2),
              "opt_type": opt_type, "dir": dir_, "mode": "paper", "open": True}
-    msg = (f"[PAPER/DELTA] SELL {legs[1]['symbol']} @${legs[1]['entry_fill']:.1f} + BUY {legs[0]['symbol']} "
-           f"@${legs[0]['entry_fill']:.1f} ×{lots} lots (net ${credit:+.1f}/BTC)")
-    _tg(f"🎯 <b>Level Slot ENTRY</b> {s['id']} [PAPER/DELTA]\nlevel {s.get('level')} ±{s.get('zone') or 0} · spot ${spot:,.0f}\n{msg}")
+    tagm = "TESTNET/DELTA (demo account pe visible)" if testnet else "PAPER/DELTA (sim — testnet key nahi)"
+    msg = (f"[{tagm}] SELL {legs[1]['symbol']} @${legs[1]['entry_fill']:.1f} + BUY {legs[0]['symbol']} "
+           f"@${legs[0]['entry_fill']:.1f} ×{lots} lots (net ${credit:+.1f}/BTC)" + (f" · reconcile {reconcile}" if reconcile else ""))
+    _tg(f"🎯 <b>Level Slot ENTRY</b> {s['id']} [{tagm}]\nlevel {s.get('level')} ±{s.get('zone') or 0} · spot ${spot:,.0f}\n{msg}")
     return True, msg, entry
 
 
@@ -754,8 +806,10 @@ def _btc_mtm_inr(entry, marks):
     return tot
 
 
-def _btc_check_exits(s):
-    """Own exit engine for BTC paper spreads (wick mode)."""
+def _btc_check_exits(s, force_reason=None):
+    """Own exit engine for BTC spreads (wick mode). Testnet entries are closed with REAL
+    opposite market orders (fills become the exit marks); sim entries mark at chain price.
+    `force_reason` = manual/forced close (e.g. smoke-test flatten)."""
     e = s.get("entry") or {}
     if not e.get("btc") or not e.get("open"):
         return
@@ -795,10 +849,23 @@ def _btc_check_exits(s):
                 mtm = _btc_mtm_inr(e, marks)
         except Exception:
             pass
+    if force_reason and not reason:
+        reason = str(force_reason)
     if not reason:
         return
     try:
         import delta_ironfly_trader as dft
+        if e.get("testnet"):
+            b = dft._testnet_broker()
+            if b is None:
+                _log(f"{s['id']} testnet exit: broker unavailable — retry next tick")
+                return
+            fills = dft.testnet_close_held(b, e["legs"], _log)
+            if fills is None:
+                _log(f"{s['id']} testnet exit: a close leg not filled — retry next tick (never half-close)")
+                return
+            marks.update(fills)                             # real fills = exit marks; settled legs keep intrinsic/mark
+            mtm = _btc_mtm_inr(e, marks)
         for lg in e["legs"]:
             if lg["symbol"] in marks:
                 lg["exit_fill"] = marks[lg["symbol"]]
