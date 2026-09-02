@@ -1854,3 +1854,9 @@ Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.
 **Files:** `scratch/strangle_roll/engine2.py|engine3.py` (reuse), new `grid4.py`, report
 **Kyun:** user request; + Lab badge "pricing source not recorded" (meta me `pricing_source` missing — build_run fix)
 **Depends on:** local NIFTY lake (present)
+
+## 2026-09-02 — OptChainLake ±20 download DONE → coverage check: 02.10.01 STILL NOT USABLE (43.9%)
+**Status:** DONE (negative result)
+**Kya:** BANKNIFTY ±20 download poora (297 min, manifest 10979/11152; 173 far-offset tasks Dhan 504). Of 4,092 BNF calls sirf **102 me data, 3,990 EMPTY** — Dhan rollingoption ~±10-12 ke aage kuch nahi deta (memory hedged_strangle_family cap confirmed). `lake_coverage_check --hold 1`: BANKNIFTY/MONTH 02.10.01 legs 43.9% clean (0% → 44%, par target ~100%) → **honest 02.10.01 number is lake se nikal hi nahi sakta**. NIFTY 02.17 = 98% clean (usable). Downloader fixes today: token 401 abort, timeout/-1 + 5xx retryable (pehle "empty" ban ke manifest poison karte the).
+**Layer:** data / research
+**Kyun:** RESUME_bnf_audit step 1-2. Aage: 02.10.01 band hi rahe; alag data source (per-contract expired fetch = TRAP #100 unreliable) ya forward-paper hi raasta.
