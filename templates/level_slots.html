@@ -54,7 +54,7 @@
   .wlchip { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--border); border-radius:14px; padding:2px 8px; font-size:11px; font-family:var(--mono); }
   .wlchip span { cursor:pointer; color:var(--muted); } .wlchip span:hover { color:var(--red); }
   .wlchip.open { border-color:var(--blue); }
-  @media (max-width:760px) { .wlpanel { width:calc(100vw - 30px); } }
+  @media (max-width:760px) { .wlpanel { position:fixed; left:12px; right:12px; top:56px; width:auto; } }
   /* slot tabs */
   .card { background:var(--panel); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
   .stabs { display:flex; border-bottom:1px solid var(--border); background:var(--panel2); }

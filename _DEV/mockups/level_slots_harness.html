@@ -35,6 +35,9 @@ window.fetch = async (url, opt) => {
   const m = (opt && opt.method) || 'GET'; const body = opt && opt.body ? JSON.parse(opt.body) : {};
   const J = (o) => ({ status: 200, json: async () => o });
   if (url === '/api/level-slots') return J(Object.assign({ ok: true }, STATE));
+  if (url === '/api/level-slots/watchlists' && m === 'GET') return J({ ok: true, watchlists: STATE.wl || {} });
+  if (url === '/api/level-slots/watchlists' && m === 'POST') { STATE.wl = STATE.wl || {}; STATE.wl[body.name] = { name: body.name, symbols: body.symbols }; return J({ ok: true, watchlist: STATE.wl[body.name] }); }
+  if (url.startsWith('/api/level-slots/watchlists/') && m === 'DELETE') { delete STATE.wl[decodeURIComponent(url.split('/').pop())]; return J({ ok: true }); }
   if (url.startsWith('/api/level-slots/search')) { const q = decodeURIComponent(url.split('q=')[1] || ''); return J({ ok: true, symbols: ['RELIANCE', 'SBIN', 'HDFCBANK', 'ICICIBANK', 'INFY'].filter(x => x.includes(q)) }); }
   if (url === '/api/level-slots/underlying' && m === 'POST') { const s = body.sym; if (!STATE.underlyings[s]) { STATE.underlyings[s] = {}; STATE.prices[s] = 1234.5; for (const k of ['I1', 'I2', 'P1', 'P2']) STATE.slots.push(mkSlot(s, k, k[0] === 'I' ? 'idx' : 'prem')); } return J({ ok: true }); }
   if (url.startsWith('/api/level-slots/underlying/') && m === 'DELETE') { const s = url.split('/').pop(); if (STATE.fixed.includes(s)) return J({ ok: false, msg: 'fixed' }); delete STATE.underlyings[s]; STATE.slots = STATE.slots.filter(x => x.sym !== s); return J({ ok: true }); }
