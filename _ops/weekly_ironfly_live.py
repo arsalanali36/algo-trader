@@ -136,7 +136,7 @@ def _strike_of(trad_sym):
 def _no_entry_now():
     try:
         _sq, no_entry = rg.exit_time_config()
-        h, m = [int(x) for x in str(no_entry).split(":")[:2]]
+        h, m = rg.hm_tuple(no_entry)          # (H, M) tuple — NOT "HH:MM" (was silently dead)
         now = datetime.now()
         return (now.hour, now.minute) >= (h, m)
     except Exception:
@@ -257,9 +257,14 @@ def _maybe_enter(c):
         return
     today = now.strftime("%Y-%m-%d")
     for sym in c.get("symbols", ["NIFTY"]):
-        if _last_day.get(sym) == today or wf.has_open(sym):
+        if _last_day.get(sym) == today:
             continue
         _last_day[sym] = today            # one attempt/symbol/day
+        if wf.has_open(sym):
+            # LOUD — a silent skip here hid a dead expiry-squareoff for a whole cycle.
+            op = [p["id"] + "@" + str(p.get("expiry_date")) for p in wf.list_open(sym)]
+            _log(f"{sym}: entry window but position still open → skip ({', '.join(op)})")
+            continue
         spot = _spot(sym)
         if not spot:
             continue
@@ -289,16 +294,26 @@ def ironfly_loop():
                 sym = pos["symbol"]
                 ltp_poller.request_watch([(l["sec_id"], SEG) for l in pos["legs"]
                                           if l.get("status") == "open"])
-                # weekly-expiry squareoff
+                # Past the expiry DATE = contracts are gone (cash-settled at the broker);
+                # nothing to close, just retire the state so the next cycle can enter.
+                # (2026-09-02: the 26-Aug fly expired 01-Sep but stayed "open" here because
+                # the squareoff below never fired — see hm_tuple — and today's 09:20 entry
+                # was skipped as "already open".)
+                if pos.get("expiry_date") and today > str(pos["expiry_date"]):
+                    _log(f"{sym}: position {pos['id']} expired {pos['expiry_date']} — settled at broker, "
+                         f"retiring state (no orders)")
+                    wf.set_status(pos["id"], "expired", "IRONFLY_EXPIRED_SETTLED")
+                    continue
+                # weekly-expiry squareoff (expiry DAY, at the configured squareoff time)
                 if pos.get("expiry_date") and today >= str(pos["expiry_date"]):
                     try:
                         sqh, _ = rg.exit_time_config()
-                        h, m = [int(x) for x in str(sqh).split(":")[:2]]
+                        h, m = rg.hm_tuple(sqh)   # (H, M) tuple — NOT "HH:MM" (was silently dead)
                         if (datetime.now().hour, datetime.now().minute) >= (h, m):
                             _log(f"{sym}: expiry squareoff (exp={pos['expiry_date']})")
                             _close_all(pos, "IRONFLY_EXPIRY"); continue
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        _log(f"{sym}: expiry-squareoff check error: {e}")
                 # 50% target exit
                 r, mtm = wf.check_exit(pos, _ltp_of(pos.get("created_ts", 0)))
                 if r == "target":

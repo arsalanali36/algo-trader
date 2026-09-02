@@ -1822,3 +1822,11 @@ Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.
 **Files:** `_ops/pnl_journal.py`?, `templates/index.html`, `static/js/topnav.js`, `static/js/app-17-trade-manager.js`
 **Kyun:** user report (screenshots)
 **Depends on:** nothing
+
+## 2026-09-02 — 02.17 weekly iron-fly: expiry squareoff silently dead → today's entry skipped ("already open")
+**Status:** DONE — jad: `exit_time_config()` (H,M) TUPLE deta hai, teen live loops (weekly_ironfly/strangle/m_pattern, 6 sites) `str(x).split(':')` karte the → ValueError `except: pass` me → expiry-squareoff + no-entry gate DEAD. Fix: `risk_gate.hm_tuple()` single helper + saare sites; weekly loop past-expiry position ko auto-retire (`expired`, broker settled, no orders) + entry-skip LOUD log; guard `_DEV/tests/test_exit_time_hm.py` (helper + 3 loops gates + static regex). Aaj ka 09:20 entry MISS hua (Rule 10: 14:xx pe manual fire nahi kiya — user ka call). VPS-live, algo-monitor restart.
+**Kya:** `weekly_ironfly_live.ironfly_loop` expiry-squareoff branch me `exit_time_config()` ka return galat parse (`str(sqh).split(":")`), ValueError `except: pass` me nigal gaya → position state kabhi closed nahi hui → 02-Sep 09:20 `has_open` → entry skip. Fix: robust time parse + expired-position auto-settle (broker cash-settled) + loud skip log; stale 26-Aug state entry close.
+**Layer:** strategy / live loop (02.17 real money)
+**Files:** `_ops/weekly_ironfly_live.py`, `data/weekly_ironfly_positions.json` (VPS data fix)
+**Kyun:** user: "02.17 aaj kyun nahi chali"
+**Depends on:** nothing

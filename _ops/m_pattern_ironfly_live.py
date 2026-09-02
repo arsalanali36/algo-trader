@@ -168,7 +168,7 @@ def _strike_of(trad_sym):
 def _no_entry_now():
     try:
         _sq, no_entry = rg.exit_time_config()
-        h, m = [int(x) for x in str(no_entry).split(":")[:2]]
+        h, m = rg.hm_tuple(no_entry)          # (H, M) tuple — NOT "HH:MM" (was silently dead)
         now = datetime.now(IST)
         return (now.hour, now.minute) >= (h, m)
     except Exception:
@@ -288,7 +288,7 @@ def _is_trading_day(date_str):
 def _sq_time_reached():
     try:
         sqh, _ = rg.exit_time_config()
-        h, m = [int(x) for x in str(sqh).split(":")[:2]]
+        h, m = rg.hm_tuple(sqh)   # (H, M) tuple — NOT "HH:MM" (was silently dead, 2026-09-02)
         now = datetime.now(IST)
         return (now.hour, now.minute) >= (h, m)
     except Exception:

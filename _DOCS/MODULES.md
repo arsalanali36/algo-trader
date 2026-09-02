@@ -182,6 +182,7 @@ risk_gate.py — capital allocation gate (RMS Stage 1).
 - 🔧 `gating_status` — Consolidated "can this strategy take a NEW entry right now?" answer — used
 - 🔧 `get_broker_balance` — {available, collateral, total_margin, ok} for 'dhan'/'kite', cached
 - 🔧 `hedge_config` — Auto-hedge settings for naked option-SELL strategies (currently
+- 🔧 `hm_tuple` — Normalise a time-of-day to an (H, M) int tuple.
 - 🔧 `is_expiry_day` — True if today is the expiry date of this F&O contract.
 - 🔧 `is_manual_close_vetoed` — True if the user manually closed (strategy, symbol) today → no re-entry.
 - 🔧 `kill_floor_config` — Account-level trailing kill-floor settings (2026-07-02, user-requested).

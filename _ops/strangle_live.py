@@ -186,7 +186,7 @@ def _no_entry_now():
     """True if past the no-entry-after cutoff (rg single source)."""
     try:
         _sq, no_entry = rg.exit_time_config()
-        h, m = [int(x) for x in str(no_entry).split(":")[:2]]
+        h, m = rg.hm_tuple(no_entry)          # (H, M) tuple — NOT "HH:MM" (was silently dead)
         now = datetime.now()
         return (now.hour, now.minute) >= (h, m)
     except Exception:
@@ -382,11 +382,11 @@ def strangle_loop():
                 if pos.get("expiry_date") and today >= str(pos["expiry_date"]):
                     try:
                         sqh, _ = rg.exit_time_config()
-                        h, m = [int(x) for x in str(sqh).split(":")[:2]]
+                        h, m = rg.hm_tuple(sqh)   # (H, M) tuple — NOT "HH:MM" (was silently dead, 2026-09-02)
                         if (datetime.now().hour, datetime.now().minute) >= (h, m):
                             _close_all(pos, "STRANGLE_EXPIRY"); continue
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        _log(f"{sym}: expiry-squareoff check error: {e}")
                 # roll (threatened side)
                 if spot:
                     for side in sr.rolls_needed(pos, spot):

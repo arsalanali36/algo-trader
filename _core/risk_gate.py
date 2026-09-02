@@ -118,6 +118,19 @@ def exit_time_config():
     return squareoff, no_entry
 
 
+def hm_tuple(v):
+    """Normalise a time-of-day to an (H, M) int tuple.
+
+    Accepts what exit_time_config() returns ((H, M) tuple) AND "HH:MM" strings.
+    2026-09-02: three live loops (weekly_ironfly / strangle / m_pattern) did
+    str()-then-split-on-colon on the TUPLE → ValueError swallowed by `except: pass`
+    → expiry squareoff + no-entry gate silently DEAD (02.17 never closed its
+    state, next cycle's entry skipped as "already open"). Use this everywhere."""
+    if isinstance(v, (tuple, list)) and len(v) >= 2:
+        return int(v[0]), int(v[1])
+    return _parse_hm(str(v))
+
+
 def max_premium_config():
     """Per-index max option-premium entry cap (₹), user-requested 2026-07-07.
     A new option entry is BLOCKED if its per-unit premium exceeds the cap for
