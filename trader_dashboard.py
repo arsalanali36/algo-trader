@@ -7988,8 +7988,9 @@ def api_level_slots_chart(slot_id):
         if not s:
             return jsonify({"ok": False, "msg": "slot nahi mila"})
         tf = request.args.get('tf') or s.get("tf") or "5m"
-        bars = L.fetch_bars(s, tf=tf)
-        return jsonify({"ok": True, "bars": bars[-160:], "slot": s, "tf": tf,
+        days = int(request.args.get('days') or 1)
+        bars = L.fetch_bars(s, tf=tf, days=days)
+        return jsonify({"ok": True, "bars": bars[-6000:], "slot": s, "tf": tf, "days": days,
                         "price": L.price_now(s, wide=True)})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e), "bars": []})

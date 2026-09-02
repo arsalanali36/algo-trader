@@ -12,6 +12,11 @@
   const D = { underlyings: {}, slots: [], prices: {}, mode: 'paper', fixed: [] };
   let ix = null, cur = null, F = null, Fid = null;     // F = working copy of the selected slot's config
   let chart = null, series = null, lines = [], chartKey = null, pollT = null;
+  let paneSig = null, drawMode = false, userLines = [], fsRO = null;
+  const chartHost = document.createElement('div'); chartHost.id = 'chart';
+  const sigOf = (s) => s ? JSON.stringify([s.status, s.last_msg, (s.events || []).length, s.entry, s.pattern, s.result, s.level, s.zone, s.exit]) : '';
+  const DAYS_KEY = 'ls_chart_days';
+  const chartDays = () => { try { return Number(localStorage.getItem(DAYS_KEY)) || 5; } catch (e) { return 5; } };
 
   function toast(msg, kind) {
     const t = $('toast'); t.textContent = msg; t.className = 'toast ' + (kind || '');
@@ -95,14 +100,21 @@
     const ae = document.activeElement;
     const editing = !force && ae && ['INPUT', 'SELECT'].includes(ae.tagName) && $('pane').contains(ae);
     if (editing) { renderLog(); return; }
+    const csig = sigOf(slot(cur));
+    if (!force && paneSig === csig && $('chart') && chartHost.parentNode) { renderStabs(); renderLog(); patchStatus(); loadChart(false); return; }
+    paneSig = csig;
+    renderStabs();
+    renderPane();
+    renderLog();
+  }
+  function patchStatus() { const s = slot(cur); const st = document.querySelector('.ft .st'); if (s && st) { st.textContent = LBL[s.status] || s.status; st.className = 'st ' + s.status; } }
+  function renderStabs() {
     const sl = slotsOf(ix);
     $('stabs').innerHTML = sl.map((s, k) => `<div class="stab ${s.id === cur ? 'on' : ''} ${k === 2 ? 'grp-start' : ''}" data-id="${s.id}">
         <span class="k"><i class="dot ${s.status}"></i> ${s.kind === 'idx' ? 'INDEX' : 'PREMIUM'} ${s.slot[1]}</span>
         <span class="n">${slotName(s)}</span>
         <span class="s">${s.status !== 'idle' ? (LBL[s.status] || s.status) : (s.level ? 'idle · lvl ' + fmt(s.level) : 'not set')}</span></div>`).join('');
-    $('stabs').querySelectorAll('.stab').forEach(el => el.onclick = () => { cur = el.dataset.id; F = deepCopy(slot(cur)); Fid = cur; render(); });
-    renderPane();
-    renderLog();
+    $('stabs').querySelectorAll('.stab').forEach(el => el.onclick = () => { cur = el.dataset.id; F = deepCopy(slot(cur)); Fid = cur; render(true); });
   }
   function slotName(s) {
     const bear = s.from_dir !== 'above';
@@ -134,8 +146,11 @@
        <span class="lg"><i style="border-color:#58a6ff"></i>level</span><span class="lg"><i style="border-color:#58a6ff;border-top-style:dashed"></i>zone ±</span>
        <span class="lg"><i style="border-color:var(--red);border-top-style:dashed"></i>SL</span><span class="lg"><i style="border-color:var(--green);border-top-style:dashed"></i>Target</span>
        <span class="lg" style="color:var(--yellow)">▼ pattern</span><span class="lg" style="color:var(--green)">▲ entry</span>
-       <span style="margin-left:auto" id="chPx"></span></div>
-      <div id="chart"><div class="chartmsg">chart…</div></div></div>
+       <span style="margin-left:auto" id="chPx"></span>
+       <span class="tf" id="chDays">${[1, 5, 10, 30].map(d => `<button class="${on(d === chartDays())}" data-days="${d}">${d}d</button>`).join('')}</span>
+       <button class="cbtn ${on(drawMode)}" id="drawBtn" title="click chart → horizontal line">＋ Line</button>
+       <button class="cbtn" id="fsBtn" title="fullscreen (Esc)">⛶</button></div>
+      <div id="chartslot"></div><div class="dlines" id="dlines" style="display:none"></div></div>
     <div class="two">
       <div class="box"><h3>Entry <span>${sym} · ${isIdx ? 'spot level' : 'premium level'}</span></h3>
         <div class="sec"><div class="rows">
@@ -200,6 +215,11 @@
     if ($('armBtn')) $('armBtn').onclick = arm;
     if ($('disarmBtn')) $('disarmBtn').onclick = disarm;
     if (!isIdx) loadStrikes(true);
+    $('chartslot').appendChild(chartHost);
+    document.querySelectorAll('#chDays button').forEach(b => b.onclick = () => { try { localStorage.setItem(DAYS_KEY, b.dataset.days); } catch (e) {} document.querySelectorAll('#chDays button').forEach(x => x.classList.remove('on')); b.classList.add('on'); loadChart(true); });
+    $('drawBtn').onclick = () => { drawMode = !drawMode; $('drawBtn').classList.toggle('on', drawMode); toast(drawMode ? 'chart pe click karo → line' : 'line mode off'); };
+    $('fsBtn').onclick = toggleFs;
+    loadUserLines();
     loadChart(chartKey !== cur + '|' + (F.tf || '5m'));
   }
   function grp(id, key, fn) { const g = $(id); if (!g) return; g.querySelectorAll('button').forEach(b => b.onclick = () => { g.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); fn(b.dataset[key]); }); }
@@ -245,22 +265,56 @@
 
   // ───────────── chart ─────────────
   function ensureChart() {
-    const el = $('chart'); if (!el || typeof LightweightCharts === 'undefined') return false;
-    if (chart && el.contains(chart._el)) return true;
+    const el = chartHost; if (!el.parentNode || typeof LightweightCharts === 'undefined') return false;
+    if (chart && series) return true;
     el.innerHTML = '';
     chart = LightweightCharts.createChart(el, { width: el.clientWidth, height: el.clientHeight || 280,
       layout: { background: { color: '#0d1117' }, textColor: '#8b949e' }, grid: { vertLines: { color: '#161b22' }, horzLines: { color: '#161b22' } },
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#30363d' }, rightPriceScale: { borderColor: '#30363d' } });
     chart._el = el;
     series = chart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
-    window.addEventListener('resize', () => { try { chart.applyOptions({ width: el.clientWidth }); } catch (e) {} });
+    window.addEventListener('resize', () => { try { chart.applyOptions({ width: el.clientWidth, height: el.clientHeight || 280 }); } catch (e) {} });
+    chart.subscribeClick((param) => {
+      if (!drawMode || !param || !param.point) return;
+      const price = series.coordinateToPrice(param.point.y); if (price == null) return;
+      userLines.push(Math.round(price * 100) / 100); saveUserLines(); drawUserLines(); renderDlines();
+    });
     return true;
   }
+  // ── user-drawn horizontal lines (per slot, localStorage) ──
+  let ulObjs = [];
+  const ulKey = () => 'ls_lines:' + cur;
+  function loadUserLines() { try { userLines = JSON.parse(localStorage.getItem(ulKey()) || '[]'); } catch (e) { userLines = []; } renderDlines(); }
+  function saveUserLines() { try { localStorage.setItem(ulKey(), JSON.stringify(userLines)); } catch (e) {} }
+  function drawUserLines() {
+    if (!series) return;
+    ulObjs.forEach(l => { try { series.removePriceLine(l); } catch (e) {} }); ulObjs = [];
+    userLines.forEach(p => ulObjs.push(series.createPriceLine({ price: p, color: '#e3b341', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: 'L' })));
+  }
+  function renderDlines() {
+    const el = $('dlines'); if (!el) return;
+    el.style.display = userLines.length ? 'flex' : 'none';
+    el.innerHTML = userLines.map((p, i) => `<span class="dline"><b>${fmt(p, 2)}</b><span data-lv="${i}" title="is line ko Key level banao">→ level</span><span data-rm="${i}" title="hatao">✕</span></span>`).join('');
+    el.querySelectorAll('[data-lv]').forEach(x => x.onclick = () => { const p = userLines[+x.dataset.lv]; F.level = p; const inp = $('fLevel'); if (inp) { inp.value = p; inp.dispatchEvent(new Event('input')); } loadChart(false); toast('Key level = ' + p + ' (Save karo)', 'ok'); });
+    el.querySelectorAll('[data-rm]').forEach(x => x.onclick = () => { userLines.splice(+x.dataset.rm, 1); saveUserLines(); drawUserLines(); renderDlines(); });
+  }
+  // ── fullscreen ──
+  function toggleFs() {
+    const box = document.querySelector('.chartbox'); if (!box) return;
+    const onFs = box.classList.toggle('fs');
+    document.body.style.overflow = onFs ? 'hidden' : '';
+    const fit = () => { try { chart && chart.applyOptions({ width: chartHost.clientWidth, height: chartHost.clientHeight || 280 }); } catch (e) {} };
+    if (fsRO) { fsRO.disconnect(); fsRO = null; }
+    if (onFs && window.ResizeObserver) { fsRO = new ResizeObserver(fit); fsRO.observe(chartHost); }
+    setTimeout(fit, 50);
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const box = document.querySelector('.chartbox.fs'); if (box) toggleFs(); } });
   async function loadChart(fit) {
     const s = slot(cur); if (!s || !F) return;
     const tf = F.tf || s.tf || '5m';
-    const d = await api(`/api/level-slots/${encodeURIComponent(cur)}/chart?tf=${tf}`);
-    const el = $('chart'); if (!el) return;
+    const key = cur + '|' + tf + '|' + chartDays();
+    const d = await api(`/api/level-slots/${encodeURIComponent(cur)}/chart?tf=${tf}&days=${chartDays()}`);
+    const el = chartHost; if (!el.parentNode) return;
     if (!d.ok || !d.bars || !d.bars.length) { chart = null; series = null; el.innerHTML = `<div class="chartmsg">${d.msg || 'candles nahi (market band / contract set nahi)'}</div>`; return; }
     if (!ensureChart()) return;
     if ($('chPx')) $('chPx').textContent = d.price != null ? 'last ' + fmt(d.price, 2) : '';
@@ -279,7 +333,9 @@
     if (ss.pattern && ss.pattern.ts) mk.push({ time: ss.pattern.ts, position: ss.from_dir === 'above' ? 'belowBar' : 'aboveBar', color: '#d29922', shape: ss.from_dir === 'above' ? 'arrowUp' : 'arrowDown', text: ss.pattern.name });
     if (e.ts && d.bars.length) { const tfs = { '1m': 60, '3m': 180, '5m': 300, '15m': 900 }[tf] || 300; const t = Math.floor((e.ts + 19800) / tfs) * tfs; const bar = d.bars.find(b => b.time === t) || d.bars[d.bars.length - 1]; mk.push({ time: bar.time, position: ss.from_dir === 'above' ? 'belowBar' : 'aboveBar', color: '#3fb950', shape: ss.from_dir === 'above' ? 'arrowUp' : 'arrowDown', text: 'ENTRY' }); }
     try { series.setMarkers(mk.sort((a, b) => a.time - b.time)); } catch (err) {}
-    if (fit || chartKey !== cur + '|' + tf) { chart.timeScale().fitContent(); chartKey = cur + '|' + tf; }
+    drawUserLines();
+    // fitContent ONLY on slot/tf/days change — a poll refresh must never reset the user's zoom/scale
+    if (fit || chartKey !== key) { chart.timeScale().fitContent(); chartKey = key; }
   }
 
   function renderLog() {

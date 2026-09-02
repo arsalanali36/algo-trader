@@ -171,7 +171,7 @@ def _in_nse_session(t_ist_epoch):
     return 555 <= hm < 930
 
 
-def fetch_bars(s, tf=None, force=False):
+def fetch_bars(s, tf=None, force=False, days=1):
     """Closed candles for the slot's source at its TF (oldest→newest, IST-shifted
     epoch 'time' like /api/trade-chart-data). [] on any failure (freeze, never guess)."""
     src = candle_source(s)
@@ -179,7 +179,8 @@ def fetch_bars(s, tf=None, force=False):
         return []
     tf = tf or s.get("tf") or "5m"
     tf_min = _TF_MIN.get(tf, 5)
-    key = (src[0], src[1], tf_min)
+    days = max(1, min(int(days or 1), 60))
+    key = (src[0], src[1], tf_min, days)
     now = time.time()
     hit = _bars_cache.get(key)
     if hit and not force and (now - hit[0]) < _BARS_TTL:
@@ -189,7 +190,7 @@ def fetch_bars(s, tf=None, force=False):
         if src[0] == "delta":
             if delta_feed is None:
                 return []
-            raw = delta_feed.candles("BTC", tf, 200) or []
+            raw = delta_feed.candles("BTC", tf, min(2000, max(200, days * (1440 // tf_min)))) or []
             span = tf_min * 60
             for r in raw:
                 if int(r["time"]) + span > now:
@@ -199,7 +200,7 @@ def fetch_bars(s, tf=None, force=False):
         else:
             from brokers import get_broker
             br = get_broker("dhan")
-            df = br.intraday_candles(src[1], src[2], src[3], days=1, interval=1)
+            df = br.intraday_candles(src[1], src[2], src[3], days=days, interval=1)
             if df is None or df.empty:
                 return []
             rows = []
