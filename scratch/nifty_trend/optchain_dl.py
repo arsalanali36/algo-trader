@@ -191,6 +191,14 @@ def _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl,
             if status == 429:
                 print("  [%d/%d] 429 — backoff 20s (%s)" % (i + 1, total, key), flush=True)
                 time.sleep(20); continue
+            if status in (401, 403):
+                # AUTH failure = token expired/invalid. This is NOT a per-task input
+                # error: marking it done would silently poison the manifest (every
+                # remaining task skipped forever). Save progress-so-far and abort loud.
+                _save_manifest(mpath, done)
+                raise SystemExit("ABORT: HTTP %s on %s — Dhan token expired/invalid. "
+                                 "Refresh data/config.json jwt_token and re-run (resumable)."
+                                 % (status, key))
             if status not in (200, -1):
                 err += 1
                 if err <= 20:

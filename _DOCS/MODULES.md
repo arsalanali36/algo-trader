@@ -297,12 +297,15 @@ webhook_executor.py — TradingView webhook → Dhan/Kite order executor (MULTI-
 ### `_data/dhan_feed.py`
 dhan_feed.py — live bid/ask store via Dhan WebSocket Full packet.
 
-- 🔧 `add` — Subscribe one more instrument at runtime; loop rebuilds connection cleanly.
+- 🔧 `add` — Subscribe one more instrument at runtime — from ANY process.
 - 🔧 `best_ask` — …
 - 🔧 `best_bid` — …
 - 🔧 `get_quote` — Latest WebSocket tick for sec_id, or {} if none.
+- 🔧 `owner_alive` — True if SOME process currently holds the feed connection (heartbeat fresh).
+- 🔧 `snapshot` — All known quotes {sec_id: quote} — this process's LIVE merged over the
 - 🔧 `start` — Start the feed thread. creds={jwt_token,client_id}. sec_tuples=[(seg,sec_id),...].
 - 🔧 `stop` — …
+- 🔧 `wait_quote` — Request a subscription and wait up to `timeout` s for a fresh tick.
 
 ### `_data/dhan_master.py`
 dhan_master.py — daily Dhan scrip-master download + option/equity contract resolver.
@@ -1818,7 +1821,6 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_rms_reconcile` — RMS Stage 3 — read-only drift check: our own capital_in_use(None) vs the
 - 🔧 `api_rms_summary` — …
 - 🔧 `api_roadmap` — …
-- 🔧 `api_roadmap_candidates` — Har Lab-run strategy pe deploy-gate → eligible / weak / rejected (read-only).
 - 🔧 `api_roadmap_daily` — …
 - 🔧 `api_roadmap_goal` — Solve only — koi write nahi.
 - 🔧 `api_roadmap_plan` — …

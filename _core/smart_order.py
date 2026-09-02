@@ -25,6 +25,7 @@ import risk_gate
 import dhan_feed
 
 TICK = 0.05
+_FEED_WAIT_SECS = 2.0   # max wait for live bid/ask after requesting a feed subscription (ADR-013)
 
 _ltp_cache = {}   # sec_id -> (ltp, epoch_ts) — opportunistically warmed by every call
 
@@ -100,6 +101,15 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10, log=None):
     # priced off a frozen quote. pos_monitor passes max_age at all 11 of its call
     # sites; this one, the one that actually prices orders, was missed.
     q = dhan_feed.get_quote(sec_id, max_age=dhan_feed.FEED_MAX_AGE)
+    if not q:
+        # ADR-013 (2026-09-02): the contract is usually NOT subscribed yet when the
+        # order fires (strike chosen seconds earlier). Ask the feed owner to
+        # subscribe it and wait briefly for real depth — measured 26/26 live
+        # orders were priced off REST LTP with bid=None, and an LTP-based limit
+        # sat outside the book → no fill → 11s chase (~6 pt on 02.10.01). Returns
+        # {} at once (no stall) when no process holds a feed connection.
+        q = dhan_feed.wait_quote(sec_id, seg=seg, timeout=_FEED_WAIT_SECS,
+                                 max_age=dhan_feed.FEED_MAX_AGE)
     bid, ask, ltp = q.get("bid"), q.get("ask"), q.get("ltp")
     buf = buffer_bps / 10000.0
 

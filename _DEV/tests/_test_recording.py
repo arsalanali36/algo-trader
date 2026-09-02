@@ -9,7 +9,8 @@ if os_.DB_PATH.exists():
     except Exception: pass
 os_.init_db()
 
-fd = types.ModuleType("dhan_feed"); fd.get_quote = lambda s: {}; sys.modules["dhan_feed"] = fd
+fd = types.ModuleType("dhan_feed"); fd.get_quote = lambda s, max_age=None: {}; fd.wait_quote = lambda *a, **k: {}
+fd.FEED_MAX_AGE = 12; fd.add = lambda *a, **k: None; sys.modules["dhan_feed"] = fd  # stub mirrors real API (FEED_MAX_AGE 07-16, wait_quote ADR-013)
 import smart_order
 
 class FakeBroker:

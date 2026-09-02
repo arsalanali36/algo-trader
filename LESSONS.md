@@ -5487,3 +5487,29 @@ isliye agli block-config strategy bhi list me aayegi.
 **Khula (jaan-boojh ke):** 11.01 Delta Iron-Fly `send_raw()` use karta hai — wo
 whitelist/mode filter se guzarta hi nahi (crypto ka apna order-path hai, ADR-021).
 Uske message pehle bhi aa rahe the aur ab bhi aayenge; ise unify karna alag kaam hai.
+
+
+## TRAP #204 — Feed ka bid/ask sirf OWNER process me tha; har order LTP pe laga (2026-09-02, user-asked "orders bid/ask kis pe?")
+
+**Symptom:** `smart_order` ka design = marketable LIMIT (BUY ask+10bps / SELL bid−10bps). Par VPS logs me pichle **26/26 live orders** `[PX] ... bid=None ask=None src=rest_ltp` — yaani har order **REST LTP ± 0.1%** pe gaya, book se bahar baitha, fill nahi hua, 11s chase, doosri price. 02.10.01 (BNF hedged strangle) pe naapa: entry+exit me **~13 pt / ₹1,970 = ₹4,000 stop ka 49%** execution me gaya — ~7 pt asli spread (jo rahega) + **~6 pt chase-drift (feed toota hone se)**.
+
+**Root (teen, ek module me):**
+1. **LIVE dict per-process memory hai.** TRAP #87-89 ne connection-collision theek ki — ek sqlite-elected OWNER hi socket kholta hai. Par DATA sirf owner ki memory me raha. Owner = jo bhi race jeete (VPS pe ek paper strategy fork `ARS_CHAIN_V1_PAPER`). Order lagane wale process (bnf/ironfly/chainzone traders, dashboard) me `get_quote()` hamesha `{}` → REST fallback. **Strategy traders `dhan_feed` import bhi nahi karte** — unke liye feed kabhi tha hi nahi.
+2. **Har `add()` = poora reconnect.** `_pending_resub` flip → naya `DhanFeed` object → Dhan abhi purana slot hold kar raha → agla handshake **429**. Subah 09:07-09:10 dashboard legs ek-ek add karta = reconnect storm (31-Aug: 963 warnings, aaj 109).
+3. **Index pe Full (21) subscribe = Dhan kuch NAHI bhejta.** Probe: IDX_I 13 code 21 → 0 msgs/5s; code 15 → Ticker stream. Purana loop sirf "Full Data" padhta tha → index LTP feed se HAMESHA None (isi liye `get_index` REST-cache pe tha).
+
+**Fix (ADR-013 implemented, `_data/dhan_feed.py`):**
+- Owner har tick ko `data/dhan_feed_quotes.db` (sqlite WAL, 0.3s batch-flush) me mirror karta; `get_quote()` = apni LIVE → shared store. Koi bhi process `add()` kare to `subs` table me request → owner ~1s me **in-connection** subscribe (RequestCode packet on live socket, **koi reconnect nahi**). `ws.recv()` 1s timeout → quiet market me bhi heartbeat/subs/flush chalte.
+- `_instrument_tuple`: IDX_I → Ticker (15), baaki Full (21); Ticker/Quote packets se LTP bhi liya jaata.
+- `smart_order.marketable_price`: quote na ho to `dhan_feed.wait_quote()` — sub request + ≤2s wait for real depth; **koi owner na ho to turant `{}`** (order stall nahi).
+- **`_FEED_GEN`** ownership takeover: nayi-gen process purani-gen owner (kal ka module, supervisor 09:10 tak re-warm nahi karta) se socket **le leta hai** chahe heartbeat fresh ho; same-gen heartbeat respect.
+- `snapshot()` for bulk readers (`/api/ltp-stream`) jo `LIVE.items()` iterate karte the.
+
+**Verified live (market hours, LOCAL, read-only):** owner 1 connect, +2 in-connection subscribes, 0 reconnect; reader ne shared store se BANKNIFTY spot 1.14s me, NIFTY ATM CE `bid=364.55 ask=366.15` 1.45s me; `marketable_price BUY → 366.50 src=ask`, `SELL → 364.20 src=bid`.
+
+**Sabak / guard:**
+- **"Connection shared" ≠ "data shared".** Cross-process leader election ke baad poochho: baaki processes ko DATA kaise milega? Warna leader ka kaam sirf leader ko dikhta hai. Wahi shape TRAP #88 (built ≠ wired).
+- Feature ka **consumer-side proof** lo: `[PX] src=` diagnostic (TRAP #197 follow-up) ne 26/26 rest_ltp dikhaya — bina iske "feed connected" log = jhoothi tasalli. Jo quantity order ka price decide karti hai uska source har order pe log karo.
+- Runtime subscribe = socket pe packet, reconnect nahi. Jis library ka `subscribe_symbols` `ws.closed` (websockets≥13 me nahi) use kare, uska packet khud bhejo.
+- Supervisor-COW forks **purana module** chalate hain agle re-warm tak — module-level behaviour badle to ownership/state pe **generation** rakho, warna naya code ek din late chalta hai aur pata bhi nahi chalta.
+- **Baaki khula:** asli spread (~7 pt/round-trip BNF monthly 4-leg) execution ki fees hai — feed fix ise nahi hataata; 02.10.01 ka ₹4,000 stop is basket ke shor + spread ke liye tang hi hai ([[project_code3b_basket_mtm_noise]]). Strategy forks kal 09:10 re-warm se naya smart_order lenge.

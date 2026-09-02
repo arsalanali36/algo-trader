@@ -39,6 +39,8 @@ sys.modules.setdefault("dhan_feed", types.ModuleType("dhan_feed"))
 import dhan_feed
 dhan_feed.add = lambda *a, **k: None
 dhan_feed.get_quote = lambda *a, **k: {}
+dhan_feed.wait_quote = lambda *a, **k: {}
+dhan_feed.FEED_MAX_AGE = 12  # stub mirrors real API
 
 def check(name, cond):
     print(("PASS " if cond else "FAIL ") + name)

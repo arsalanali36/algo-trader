@@ -1,6 +1,6 @@
 # ADR-013 — Market-open price-feed reliability (WebSocket-first) + REST-burst reduction
 
-Status: PROPOSED — **original premise REFUTED by measurement 2026-07-24; see MEASUREMENT UPDATE below. Nothing built. RESUME here later.**
+Status: **IMPLEMENTED 2026-09-02 (root option A — cross-process shared quote store + in-connection subscribe; see ✅ IMPLEMENTED section at the bottom, LESSONS TRAP #204).** Original premise REFUTED by measurement 2026-07-24; MEASUREMENT UPDATE below still accurate.
 Date: 2026-07-24
 
 ---
@@ -128,3 +128,27 @@ gap is reliability, not concept.
 Related: LESSONS #115/#158 (poller/feed staleness), #11/#87/#88/#89 (dhan_feed
 history), TRAP #2 (shared rate-limit), ADR-012 (auto-straddle, the first consumer).
 Memory: `project_code3b_vrp_no_spot`, `project_code3b_auto_straddle`.
+
+
+---
+
+## ✅ IMPLEMENTED (2026-09-02) — root option **A** shipped, C/B not needed
+
+**Trigger:** user asked "hamari strategies bid/ask kis pe order daalti hain?" → `[PX]` diagnostic (TRAP #197 follow-up) showed **26/26 live orders `src=rest_ltp`, bid=None**. The WebSocket WAS connecting (in one process) — the data just never left that process.
+
+**What was actually wrong (beyond this ADR's July measurement):**
+1. `dhan_feed.LIVE` is per-process memory. TRAP #87-89's owner election meant exactly ONE process (whichever won — on the VPS a paper strategy fork) held the socket and the data; every other process's `get_quote()` was `{}` forever → REST LTP. Strategy traders never even import `dhan_feed`.
+2. Every runtime `add()` rebuilt the connection (`_pending_resub`) → Dhan 429s the next handshake while holding the dropped slot → the 09:07-09:10 storm this ADR measured (963 warnings on 2026-08-31) was self-inflicted, not REST congestion (consistent with the July finding).
+3. Indices never emit a Full (code 21) packet — code 21 on IDX_I = zero messages. Index LTP from the feed was always None.
+
+**Decision (Rule 6B — extend the existing module, no new daemon):**
+- Owner mirrors ticks → `data/dhan_feed_quotes.db` (sqlite WAL, batched 0.3s). `get_quote()` = local LIVE → shared store (same `max_age` staleness guard). `snapshot()` for bulk readers.
+- Any process → `add()` → `subs` table; owner subscribes **in-connection** (~1s) with the v2 packet sent on its own loop (dhanhq's `subscribe_symbols` uses `ws.closed`, gone in websockets≥13). Reconnect only on real socket failure.
+- `ws.recv()` with 1s timeout so heartbeat / subs / flush run in a quiet market; dhanhq's server-disconnection packet (805/807…) now raises → backoff, instead of spinning.
+- IDX_I → Ticker (15); Ticker/Quote packets update LTP (keep last depth).
+- `smart_order.marketable_price`: no quote → `wait_quote()` (request + ≤2s poll); returns immediately when no owner is alive so an order path never stalls.
+- `_FEED_GEN=2` ownership takeover from older-gen owners (supervisor COW forks keep yesterday's module until the 09:10 re-warm; without this the new code would sit idle for a day).
+
+**Not done / consequences:** old-gen forks that lose ownership keep their (useless) socket until re-warm → 2 sockets for one day (Dhan allows several; verified locally alongside the VPS owner). Real bid/ask spread is still paid — this removes the chase-drift half of 02.10.01's execution cost, not the spread half. Option C (widen stale-cache 15→30s) and B (poller priority) left as-is: with the shared store, pos_monitor's primary source is populated in every process, which was the actual gap.
+
+**Verified live (LOCAL, market hours, read-only):** 1 connect, 2 in-connection subscribes, 0 reconnects; reader got BANKNIFTY spot in 1.14s and NIFTY ATM CE `bid 364.55 / ask 366.15` in 1.45s from the shared store; `marketable_price` → `src=ask` / `src=bid`. Ownership takeover unit-tested 4/4. LESSONS TRAP #204.

@@ -3616,7 +3616,9 @@ def api_ltp_stream():
                 # stream collapsed them onto ONE ltp → fake P&L (TRAP #166). The client
                 # joins each cell on its own data-sec (the contract it actually holds).
                 sec_ltp = {}
-                for sec_id, q in dhan_feed.LIVE.items():
+                # snapshot() = own LIVE + the feed owner's shared store (ADR-013) —
+                # iterating LIVE directly was {} whenever another process held the socket.
+                for sec_id, q in dhan_feed.snapshot(max_age=dhan_feed.FEED_MAX_AGE).items():
                     if q.get("ltp"):
                         sec_ltp[str(sec_id)] = round(q["ltp"], 2)
                 yield f"data: {json.dumps(sec_ltp)}\n\n"
@@ -5603,8 +5605,9 @@ def api_bulk_preview():
         try:
             import dhan_feed
             for sym, mapped_sid in sec_ids.items():
-                if str(mapped_sid) in dhan_feed.LIVE:
-                    feed_ltp = float(dhan_feed.LIVE[str(mapped_sid)].get("ltp", 0))
+                _fq = dhan_feed.get_quote(str(mapped_sid), max_age=dhan_feed.FEED_MAX_AGE)  # own LIVE → shared store (ADR-013)
+                if _fq:
+                    feed_ltp = float(_fq.get("ltp") or 0)
                     if feed_ltp > 0:
                         ltp_map[sym] = feed_ltp
         except Exception:

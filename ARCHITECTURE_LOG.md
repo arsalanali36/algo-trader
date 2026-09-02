@@ -1806,3 +1806,11 @@ saal green; basis risk NAAPA (90-din hold pe sd 0.077% vs 3.03% funding) = khatr
 **Par:** carry decay ho rahi (2021 +30.6% -> 2026 +1.7% ytd), Delta India derivatives-only (spot
 leg doosre venue pe), India tax 30%+1% TDS -> aaj ke run-rate pe FD se saaf behtar NAHI.
 Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.
+
+## 2026-09-02 — ADR-013 feed fix: cross-process dhan_feed quotes + in-connection subscribe
+**Status:** IN-PROGRESS
+**Kya:** `dhan_feed` ka bid/ask har process ko dikhe (owner shared sqlite me ticks likhe, baaki wahan se padhein), runtime `add()` ab reconnect ki jagah live-connection pe subscribe packet bheje, recv pe timeout taaki heartbeat/subs quiet market me bhi chalein; `smart_order` order se pehle quote ka short wait kare.
+**Layer:** broker / infra (money-path: order pricing)
+**Files:** `_data/dhan_feed.py`, `_core/smart_order.py`, `_ADR/ADR-013-*.md`, `LESSONS.md`
+**Kyun:** 26/26 recent live orders `src=rest_ltp` (bid=None) — LIVE dict per-process memory hai, owner = ek strategy process, order lagane wale process me khaali. Har `add()` = full reconnect → 429 storm (963 warnings 31-Aug). 02.10.01 pe ~6 pt/₹900 chase-drift isi se.
+**Depends on:** nothing
