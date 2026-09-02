@@ -65,6 +65,24 @@ try:
     import delta_feed
 except Exception:
     delta_feed = None
+try:
+    import telegram_notify as _tgn
+except Exception:
+    _tgn = None
+try:
+    import order_store
+except Exception:
+    order_store = None
+
+
+def _tg(text):
+    """Telegram (send_raw = mode-filter bypass; ye paper tool hai par user ko alert chahiye)."""
+    if _tgn is None:
+        return
+    try:
+        _tgn.send_raw(text)
+    except Exception:
+        pass
 
 SID = "level_slot"                 # strategy id (registry 03.02) — order_store.strategy
 MODE = "paper"                     # HARD LOCK — live = explicit code change + user go
@@ -534,6 +552,13 @@ def _nse_fire(s):
              "opt_type": opt_type, "dir": dir_, "mode": mode}
     msg = (f"[{mode.upper()}] SELL {s_tsym} @{placed[1]['price']} + BUY {w_tsym} @{placed[0]['price']} "
            f"×{lots}L (net {credit:+.2f}/unit)")
+    _tg(f"🎯 <b>Level Slot ENTRY</b> {s['id']} [{mode.upper()}]\n"
+        f"level {s.get('level')} ±{s.get('zone') or 0} · {'resistance → Bear Call' if opt_type == 'CE' else 'support → Bull Put'} · spot {spot:.1f}\n"
+        f"SELL {s_tsym} @{placed[1]['price']}\nBUY {w_tsym} @{placed[0]['price']}\n"
+        f"{lots} lot × {lot_sz} · net credit {credit:+.2f}/unit (₹{credit * q:+,.0f})\n"
+        f"exit: ₹{ex.get('rs_sl') or '—'}/{ex.get('rs_tg') or '—'}{' ON' if en.get('rs') else ' off'} · "
+        f"idx-pt {ex.get('ip_sl') or '—'}/{ex.get('ip_tg') or '—'}{' ON' if en.get('ip') else ' off'} · "
+        f"idx-lvl {ex.get('il_sl') or '—'}/{ex.get('il_tg') or '—'}{' ON' if en.get('il') else ' off'} · {extra['confirm_mode']}@{extra['tf']}")
     return True, msg, entry
 
 
@@ -594,6 +619,7 @@ def _btc_fire(s):
              "opt_type": opt_type, "dir": dir_, "mode": "paper", "open": True}
     msg = (f"[PAPER/DELTA] SELL {legs[1]['symbol']} @${legs[1]['entry_fill']:.1f} + BUY {legs[0]['symbol']} "
            f"@${legs[0]['entry_fill']:.1f} ×{lots} lots (net ${credit:+.1f}/BTC)")
+    _tg(f"🎯 <b>Level Slot ENTRY</b> {s['id']} [PAPER/DELTA]\nlevel {s.get('level')} ±{s.get('zone') or 0} · spot ${spot:,.0f}\n{msg}")
     return True, msg, entry
 
 
@@ -673,9 +699,61 @@ def _btc_check_exits(s):
             ls._ev(row, f"EXIT {reason} — MTM ₹{(mtm or 0):+,.0f}")
             ls._write(d)
     _log(f"{s['id']} BTC EXIT {reason} MTM ₹{(mtm or 0):+,.0f}")
+    pts = sum(((lg["entry_fill"] - lg.get("exit_fill", lg["entry_fill"])) if lg["side"] == "SELL" else (lg.get("exit_fill", lg["entry_fill"]) - lg["entry_fill"])) for lg in e["legs"])
+    _tg(f"🏁 <b>Level Slot EXIT</b> {s['id']} [PAPER/DELTA] — {reason}\nnet ${pts:+.1f}/BTC · ₹{(mtm or 0):+,.0f} · spot ${spot:,.0f}")
     if notify:
         try:
             notify.info(f"Level slot {s['id']} exit {reason} ₹{(mtm or 0):+,.0f}", source="level_slot")
+        except Exception:
+            pass
+
+
+# ─────────────────────────── NSE exit detection (group closed by Trade Manager / EOD) ───────────────────────────
+def _check_nse_exit(s):
+    """Entered NSE slot: when its group has no open leg left, read the completed round-trips
+    from order_store (the single ledger — no P&L math of our own), compute net premium POINTS
+    + ₹, mark the slot exited, Telegram it. Freeze if the ledger can't be read."""
+    e = s.get("entry") or {}
+    gid = e.get("group_id")
+    if not gid or e.get("btc") or e.get("closed") or order_store is None:
+        return
+    try:
+        if order_store.open_legs_in_group(gid):
+            return                                          # still open
+        today = _ist_now().date()
+        det = order_store.trades_for_range((today - timedelta(days=7)).isoformat(), today.isoformat()).get("details") or []
+        rows = [d for d in det if str(d.get("group_id") or "") == gid]
+    except Exception as ex_:
+        _log(f"{s['id']} exit-check ledger read fail: {ex_}")
+        return
+    if not rows:
+        return                                              # flat but no completed rows yet → wait
+    pnl = sum(float(d.get("pnl") or 0) for d in rows)
+    pts = 0.0
+    for d in rows:
+        ep, xp = float(d.get("entry_price") or 0), float(d.get("exit_price") or 0)
+        pts += (ep - xp) if str(d.get("entry")).upper() == "SELL" else (xp - ep)
+    reasons = sorted({str(d.get("exit_reason") or d.get("reason") or "") for d in rows} - {""})
+    e["closed"] = True
+    e["exit_pnl"] = round(pnl, 2)
+    e["exit_pts"] = round(pts, 2)
+    e["exit_reason"] = ", ".join(reasons) or "closed"
+    e["exit_ts"] = int(time.time())
+    with ls._LOCK:
+        d = ls._read()
+        row = d["slots"].get(s["id"])
+        if row:
+            row["entry"] = e
+            row["status"] = "exited"
+            ls._ev(row, f"EXIT {e['exit_reason']} — {pts:+.2f} pt · ₹{pnl:+,.0f}")
+            ls._write(d)
+    legs_txt = "\n".join(f"{d.get('entry')} {d.get('sym')} {d.get('entry_price')} → {d.get('exit_price')}" for d in rows)
+    _tg(f"🏁 <b>Level Slot EXIT</b> {s['id']} [{str(e.get('mode', 'paper')).upper()}] — {e['exit_reason']}\n"
+        f"{legs_txt}\nnet <b>{pts:+.2f} pt</b> · <b>₹{pnl:+,.0f}</b> (gross, {int(e.get('lots') or 0)} lot)")
+    _log(f"{s['id']} EXIT {e['exit_reason']} {pts:+.2f}pt ₹{pnl:+,.0f}")
+    if notify:
+        try:
+            notify.info(f"Level slot {s['id']} exit {e['exit_reason']} {pts:+.2f}pt ₹{pnl:+,.0f}", source="level_slot")
         except Exception:
             pass
 
@@ -748,13 +826,17 @@ def watch_once():
                     pass
         except Exception as e:
             _log(f"{sid} watch error: {e}")
-    # BTC paper exits (own engine)
+    # exits: NSE groups closed by Trade Manager/EOD → report; BTC paper → own engine
     try:
-        for s in ls.list_slots("BTC"):
-            if s.get("status") == "entered":
+        for s in ls.list_slots():
+            if s.get("status") != "entered":
+                continue
+            if str(s.get("sym", "")).upper() == "BTC":
                 _btc_check_exits(s)
+            else:
+                _check_nse_exit(s)
     except Exception as e:
-        _log(f"BTC exit check error: {e}")
+        _log(f"exit check error: {e}")
     return fired
 
 

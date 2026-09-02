@@ -123,6 +123,10 @@
     return base;
   }
   const R = (l, c) => `<div class="row"><label>${l}</label>${c}</div>`;
+  // valid_till: server keeps 'HH:MM' (today) or 'YYYY-MM-DD HH:MM'; the picker needs 'YYYY-MM-DDTHH:MM'
+  const todayIST = () => { const d = new Date(Date.now() + (330 + new Date().getTimezoneOffset()) * 60000); return d.toISOString().slice(0, 10); };
+  const vtLocal = (v) => { v = String(v || '14:30'); return v.length > 5 ? v.replace(' ', 'T').slice(0, 16) : todayIST() + 'T' + v; };
+  const vtServer = (v) => String(v || '').replace('T', ' ').slice(0, 16);
   const on = (cond) => cond ? 'on' : '';
   function renderPane() {
     const s = slot(cur);
@@ -149,6 +153,7 @@
        <span style="margin-left:auto" id="chPx"></span>
        <span class="tf" id="chDays">${[1, 5, 10, 30].map(d => `<button class="${on(d === chartDays())}" data-days="${d}">${d}d</button>`).join('')}</span>
        <button class="cbtn ${on(drawMode)}" id="drawBtn" title="click chart → horizontal line">＋ Line</button>
+       <button class="cbtn" id="rstBtn" title="reset view (Alt+R)">⟲</button>
        <button class="cbtn" id="fsBtn" title="fullscreen (Esc)">⛶</button></div>
       <div id="chartslot"></div><div class="dlines" id="dlines" style="display:none"></div></div>
     <div class="two">
@@ -164,7 +169,7 @@
           ${R('Hedge delta', `<input id="fHd" value="${F.hedge_delta ?? 0.25}">`)}
           ${R(isBTC(sym) ? 'Lots (0.001 BTC)' : 'Lots', `<input id="fLots" value="${F.lots ?? 1}">`)}
           ${R('Candle TF', `<select id="fTf">${['1m', '3m', '5m', '15m'].map(t => `<option ${t === (F.tf || '5m') ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
-          ${R('Valid till', `<input id="fVt" value="${F.valid_till || '14:30'}" placeholder="HH:MM">`)}
+          ${R('Valid till', `<input id="fVt" type="datetime-local" value="${vtLocal(F.valid_till)}" step="60">`)}
         </div></div>
         <div class="sec hint" id="hint">${hintText(F, s)}</div>
       </div>
@@ -219,6 +224,7 @@
     document.querySelectorAll('#chDays button').forEach(b => b.onclick = () => { try { localStorage.setItem(DAYS_KEY, b.dataset.days); } catch (e) {} document.querySelectorAll('#chDays button').forEach(x => x.classList.remove('on')); b.classList.add('on'); loadChart(true); });
     $('drawBtn').onclick = () => { drawMode = !drawMode; $('drawBtn').classList.toggle('on', drawMode); toast(drawMode ? 'chart pe click karo → line' : 'line mode off'); };
     $('fsBtn').onclick = toggleFs;
+    $('rstBtn').onclick = () => resetView();
     loadUserLines();
     loadChart(chartKey !== cur + '|' + (F.tf || '5m'));
   }
@@ -345,8 +351,17 @@
     try { series.setMarkers(mk.sort((a, b) => a.time - b.time)); } catch (err) {}
     drawUserLines();
     // fitContent ONLY on slot/tf/days change — a poll refresh must never reset the user's zoom/scale
-    if (fit || chartKey !== key) { chart.timeScale().fitContent(); chartKey = key; }
+    if (fit || chartKey !== key) { resetView(); chartKey = key; }
   }
+  // Reset BOTH axes — a manually-dragged price scale turns autoScale OFF and stays that way
+  // across setData(), which is exactly the "BTC ke baad RELIANCE squeezed" symptom.
+  function resetView() {
+    if (!chart) return;
+    try { chart.priceScale('right').applyOptions({ autoScale: true }); } catch (e) {}
+    try { chart.timeScale().resetTimeScale(); } catch (e) {}
+    try { chart.timeScale().fitContent(); } catch (e) {}
+  }
+  document.addEventListener('keydown', (e) => { if (e.altKey && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); resetView(); } });
 
   function renderLog() {
     const s = slot(cur);

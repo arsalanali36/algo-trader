@@ -278,12 +278,10 @@ def validate_config(cfg, existing=None):
     if tf not in TFS:
         return False, "TF 1m/3m/5m/15m"
     out["tf"] = tf
-    vt = str(cfg.get("valid_till") or base.get("valid_till") or "14:30")
-    try:
-        h, m = vt.split(":")
-        vt = f"{int(h):02d}:{int(m):02d}"
-    except Exception:
-        return False, "Valid till HH:MM"
+    vt = str(cfg.get("valid_till") or base.get("valid_till") or "14:30").strip().replace("T", " ")
+    vt = normalize_valid_till(vt)
+    if not vt:
+        return False, "Valid till 'HH:MM' ya 'YYYY-MM-DD HH:MM'"
     out["valid_till"] = vt
     ec = str(cfg.get("entry_confirm") or base.get("entry_confirm") or "close")
     if ec not in ("wick", "close"):
@@ -366,7 +364,7 @@ def arm(slot_id, spot_now=None):
             return False, "aaj is slot se entry ho chuki — ek slot, ek entry/din"
         if s.get("status") in ACTIVE_STATES:
             return True, dict(s)
-        if _hm() >= str(s.get("valid_till") or "23:59"):
+        if is_expired(s):
             return False, f"valid till {s.get('valid_till')} nikal gaya"
         if spot_now is not None:
             lo, hi = zone_band(s)
@@ -453,6 +451,31 @@ def set_status(slot_id, status, msg=""):
 
 
 # ─────────────────────────── pure decision ───────────────────────────
+def normalize_valid_till(vt):
+    """'HH:MM' (aaj) ya 'YYYY-MM-DD HH:MM' → canonical string, invalid → None."""
+    vt = str(vt or "").strip().replace("T", " ")
+    try:
+        if len(vt) > 5:
+            d = datetime.strptime(vt[:16], "%Y-%m-%d %H:%M")
+            return d.strftime("%Y-%m-%d %H:%M")
+        h, m = vt.split(":")
+        return f"{int(h):02d}:{int(m):02d}"
+    except Exception:
+        return None
+
+
+def is_expired(s, now=None):
+    """valid_till crossed? Date-less value = today's wall-clock; dated value = full IST datetime."""
+    vt = str(s.get("valid_till") or "")
+    now = now or _ist_now()
+    if len(vt) > 5:
+        try:
+            return now.strftime("%Y-%m-%d %H:%M") >= vt
+        except Exception:
+            return False
+    return now.strftime("%H:%M") >= (vt or "23:59")
+
+
 def zone_band(s):
     lvl = float(s["level"])
     z = float(s.get("zone") or 0)
@@ -527,7 +550,10 @@ def advance(s, bars, now_hm=None, entry_confirm="close"):
     st = s.get("status")
     if st not in ACTIVE_STATES:
         return s, False, False
-    if now_hm >= str(s.get("valid_till") or "23:59"):
+    _now = None
+    if now_hm and len(str(now_hm)) <= 5:
+        _n = _ist_now(); _now = _n.replace(hour=int(now_hm[:2]), minute=int(now_hm[3:5]))
+    if is_expired(s, _now):
         s["status"] = "expired"
         s.pop("pattern", None)
         _ev(s, f"valid till {s.get('valid_till')} — koi entry nahi, slot expired")
