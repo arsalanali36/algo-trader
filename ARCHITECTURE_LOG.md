@@ -1814,3 +1814,11 @@ Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.
 **Files:** `_data/dhan_feed.py`, `_core/smart_order.py`, `_ADR/ADR-013-*.md`, `LESSONS.md`
 **Kyun:** 26/26 recent live orders `src=rest_ltp` (bid=None) — LIVE dict per-process memory hai, owner = ek strategy process, order lagane wale process me khaali. Har `add()` = full reconnect → 429 storm (963 warnings 31-Aug). 02.10.01 pe ~6 pt/₹900 chase-drift isi se.
 **Depends on:** nothing
+
+## 2026-09-02 — 3 UI bugs: journal 1-Sep data, Orders-page nav (Stats2/Daily Report), Trade Manager index-price input
+**Status:** DONE — (1) journal ab `trades_for_range` 400d + EXIT-date bucket (TRAP #141 reuse; positional round-trips ab dikhte) + 'Columns · N hidden' hint (1-Sep 'sirf Manual' = chainzone column hidden thi, data theek tha); (2) index.html nav = 📊 Stats ▾ (Stats 2 + P&L Journal), Daily Report sirf Reports ▾ me — topnav.js se match; (3) `tmSet` text-keys pe re-render nahi, derived pp/bridge in-place (`_DEV/mockups/tm_typing_harness.html` 9/9). VPS-live, dashboard-only restart.
+**Kya:** (1) /journal me 01-Sep "Manual 59" galat/incomplete; (2) index.html ka apna top-nav topnav.js se alag (Stats 2 + Daily Report tab, Stats ▾ dropdown nahi); (3) Trade Manager "Index price" box me ek digit ke baad type nahi hota (re-render focus loss).
+**Layer:** UI / display
+**Files:** `_ops/pnl_journal.py`?, `templates/index.html`, `static/js/topnav.js`, `static/js/app-17-trade-manager.js`
+**Kyun:** user report (screenshots)
+**Depends on:** nothing

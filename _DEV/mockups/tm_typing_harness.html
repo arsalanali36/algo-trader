@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><title>TM typing harness</title>
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;padding:16px}#out{white-space:pre;font-family:ui-monospace,monospace;font-size:12px;margin-top:12px}</style></head>
+<body>
+<h3>Trade Manager — typing must not lose focus (2026-09-02)</h3>
+<div id="tm-panel-G1"></div>
+<div id="out"></div>
+<script>
+// minimal stubs the module touches at load
+window.apiFetch = async () => ({});
+window.toast = () => {};
+</script>
+<script src="../../static/js/app-17-trade-manager.js"></script>
+<script>
+(async () => {
+  const out = [];
+  const ok = (name, cond) => out.push((cond ? 'PASS ' : 'FAIL ') + name);
+  window._tmState = window._tmState || {};
+  window._tmState.G1 = { sym: 'C', qty: 50, en: { rs: true, pp: false, ip: true, il: true }, rs_sl: '', rs_tg: '', ip_sl: '', ip_tg: '', il_sl: '', il_tg: '', wait: 2, tf: '5m', mode: 'close', rpt: 80, spot: 25600, entry_spot: 25600, armed: false };
+  tmRender('G1');
+  const il = document.getElementById('tm-in-G1-il_sl');
+  ok('index-price SL input exists with id', !!il);
+  il.focus();
+  // simulate typing 25625 one key at a time (each keystroke fires oninput)
+  for (const ch of '25625') { il.value += ch; il.dispatchEvent(new Event('input')); }
+  const il2 = document.getElementById('tm-in-G1-il_sl');
+  ok('same input node survives typing (no re-render)', il2 === il);
+  ok('full value typed = 25625', il2.value === '25625');
+  ok('focus kept', document.activeElement === il2);
+  ok('state updated', window._tmState.G1.il_sl === '25625');
+  // ₹ combined → derived points row updates in place
+  const rs = document.getElementById('tm-in-G1-rs_sl');
+  rs.focus(); rs.value = '4000'; rs.dispatchEvent(new Event('input'));
+  ok('derived pp_sl = 4000/50 = 80.0', document.getElementById('tm-in-G1-pp_sl').value === '80.0');
+  ok('bridge refreshed with 50 pt', document.getElementById('tm-bridge-G1').innerHTML.includes('50 pt'));
+  ok('focus still on rs input', document.activeElement === document.getElementById('tm-in-G1-rs_sl'));
+  // toggles still re-render
+  tmTog('G1', 'ip');
+  ok('toggle re-renders + keeps typed values', document.getElementById('tm-in-G1-il_sl').value === '25625' && window._tmState.G1.en.ip === false);
+  document.getElementById('out').textContent = out.join('\n') + '\n\nRESULT: ' + (out.some(l => l.startsWith('FAIL')) ? 'FAIL' : 'ALL PASS');
+})();
+</script>
+</body></html>

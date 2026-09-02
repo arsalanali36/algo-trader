@@ -86,6 +86,7 @@
       event.stopPropagation();
       window.closeAvatarDropdown();
       window.closeReportsDropdown();
+      window.closeStatsDropdown && window.closeStatsDropdown();
       window.closeCurvesDropdown && window.closeCurvesDropdown();
       window.closeOrdersDropdown && window.closeOrdersDropdown();
       const dropdown = document.getElementById('more-dropdown');
@@ -100,6 +101,7 @@
       event.stopPropagation();
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
+      window.closeStatsDropdown && window.closeStatsDropdown();
       window.closeCurvesDropdown && window.closeCurvesDropdown();
       window.closeOrdersDropdown && window.closeOrdersDropdown();
       const dropdown = document.getElementById('reports-dropdown');
@@ -109,12 +111,28 @@
       const dropdown = document.getElementById('reports-dropdown');
       if (dropdown) dropdown.style.display = 'none';
     };
+    // 📊 Stats dropdown (Stats 2 + P&L Journal) — mirrors topnav.js STATS
+    window.toggleStatsDropdown = (event) => {
+      event.stopPropagation();
+      window.closeAvatarDropdown();
+      window.closeMoreDropdown();
+      window.closeReportsDropdown();
+      window.closeCurvesDropdown && window.closeCurvesDropdown();
+      window.closeOrdersDropdown && window.closeOrdersDropdown();
+      const dropdown = document.getElementById('stats-dropdown');
+      if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    };
+    window.closeStatsDropdown = () => {
+      const dropdown = document.getElementById('stats-dropdown');
+      if (dropdown) dropdown.style.display = 'none';
+    };
     // 📈 Curves dropdown (Curves + GEX + What-If)
     window.toggleCurvesDropdown = (event) => {
       event.stopPropagation();
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
       window.closeReportsDropdown();
+      window.closeStatsDropdown && window.closeStatsDropdown();
       window.closeOrdersDropdown && window.closeOrdersDropdown();
       const dropdown = document.getElementById('curves-dropdown');
       if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
@@ -129,6 +147,7 @@
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
       window.closeReportsDropdown();
+      window.closeStatsDropdown && window.closeStatsDropdown();
       window.closeCurvesDropdown && window.closeCurvesDropdown();
       const dropdown = document.getElementById('orders-dropdown');
       if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
@@ -142,6 +161,7 @@
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
       window.closeReportsDropdown();
+      window.closeStatsDropdown && window.closeStatsDropdown();
       window.closeCurvesDropdown && window.closeCurvesDropdown();
       window.closeOrdersDropdown && window.closeOrdersDropdown();
     });

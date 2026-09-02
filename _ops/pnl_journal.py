@@ -110,16 +110,29 @@ def build_month(year, month):
     strat_modes = {}
     basket = {}        # cellkey -> {basketkey: {gid,legs,g,tx}}
 
+    # TRAP #141 (2026-09-02): per-day `trades_for(iso)` mis-nets any position whose
+    # entry and exit fall on different dates (weekly iron-fly 02.17, overnight ORB,
+    # positional condors) — they never showed up as completed trades here, and a
+    # same-day re-open could pair against the wrong leg. Net ONCE over a long
+    # lookback (same as /api/orders/calendar-summary) and bucket each round-trip
+    # on its EXIT date; only exits inside this month are shown.
+    look_from = (d0 - dt.timedelta(days=400)).isoformat()
+    try:
+        rng = order_store.trades_for_range(look_from, D1)
+    except Exception:
+        rng = {"details": []}
+    by_day = {}
+    for t in rng.get("details", []):
+        xd = t.get("exit_date") or (t.get("exit_time") or "")[:10] or t.get("date") or ""
+        if D0 <= xd <= D1:
+            by_day.setdefault(xd, []).append(t)
+
     for dd in range(1, last + 1):
         day = dt.date(year, month, dd)
         if day.weekday() >= 5:
             continue
         iso = day.isoformat()
-        try:
-            r = order_store.trades_for(iso)
-        except Exception:
-            continue
-        for i, t in enumerate(r.get("details", [])):
+        for i, t in enumerate(by_day.get(iso, [])):
             s = t.get("strategy") or "unknown"
             m = _mnorm(t.get("mode"))
             g = float(t.get("pnl") or 0.0); tx = _tax(t)

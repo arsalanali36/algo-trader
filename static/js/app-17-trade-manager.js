@@ -84,9 +84,42 @@ async function tmLoadDelta(grpId) {
   } catch (e) { /* Δ optional — bridge line bas '—' rahegi */ }
 }
 
+// Keys typed into text boxes. For these we must NOT re-render the panel on every
+// keystroke — innerHTML replace destroys the focused <input>, so the user could
+// type exactly ONE digit ("25625" me sirf "2" jaata tha). Update state + refresh
+// only the derived bits (₹→points row, Δ bridge) in place.
+const _TM_TEXT_KEYS = new Set(['rs_sl', 'rs_tg', 'ip_sl', 'ip_tg', 'il_sl', 'il_tg', 'wait']);
 function tmSet(grpId, k, v) {
   const S = window._tmState[grpId]; if (!S) return;
-  S[k] = v; tmRender(grpId);
+  S[k] = v;
+  if (_TM_TEXT_KEYS.has(k)) { _tmRefreshDerived(grpId); return; }
+  tmRender(grpId);
+}
+function _tmRefreshDerived(grpId) {
+  const S = window._tmState[grpId]; if (!S) return;
+  const q = S.qty || 1;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && el.value !== val) el.value = val; };
+  set(`tm-in-${grpId}-pp_sl`, S.rs_sl ? (Math.abs(+S.rs_sl) / q).toFixed(1) : '');
+  set(`tm-in-${grpId}-pp_tg`, S.rs_tg ? (Math.abs(+S.rs_tg) / q).toFixed(1) : '');
+  const b = document.getElementById(`tm-bridge-${grpId}`);
+  if (b) b.innerHTML = _tmBridgeHtml(S);
+}
+function _tmBridgeHtml(S) {
+  let bridge = `<span style="color:#6e7681">Δ aa raha hai… (iske bina bhi trigger set ho jayenge)</span>`;
+  if (S.rpt) {
+    const es = S.entry_spot || S.spot;
+    const mk = (rs, dirUp) => {
+      if (!rs || !es) return '—';
+      const pt = Math.abs(+rs) / S.rpt;
+      const lv = dirUp ? es + pt : es - pt;
+      return `${pt.toFixed(0)} pt → ${Math.round(lv).toLocaleString('en-IN')}`;
+    };
+    bridge = `<b style="color:#79b8ff">₹${Math.round(S.rpt).toLocaleString('en-IN')}</b>
+      <span style="color:#6e7681">per index point</span>
+      &nbsp;·&nbsp; 🎯 <span style="color:#3fb950">${mk(S.rs_tg, true)}</span>
+      &nbsp;·&nbsp; 🛡 <span style="color:#f85149">${mk(S.rs_sl, false)}</span>`;
+  }
+  return bridge;
 }
 function tmTog(grpId, k) {
   const S = window._tmState[grpId]; if (!S) return;
@@ -113,11 +146,11 @@ function _tmRow(grpId, key, name, note, pre, slVal, tgVal, slK, tgK, derived, ri
          <div style="font-size:10px;color:#6e7681;margin-top:1px">${note}</div></div>
     <div style="display:flex;align-items:center;border:1px solid #30363d;border-radius:5px;background:${bg}">
       <span style="padding:0 5px;color:#6e7681;font-size:10px;font-family:ui-monospace,monospace">${pre}</span>
-      <input value="${slVal}" ${dis} placeholder="SL" oninput="tmSet('${grpId}','${slK}',this.value)"
+      <input id="tm-in-${grpId}-${slK}" value="${slVal}" ${dis} placeholder="SL" oninput="tmSet('${grpId}','${slK}',this.value)"
         style="background:transparent;border:0;color:${derived ? '#8b949e' : '#e6edf3'};font-family:ui-monospace,monospace;font-size:12px;font-weight:600;padding:5px 6px 5px 0;width:100%;outline:none"></div>
     <div style="display:flex;align-items:center;border:1px solid #30363d;border-radius:5px;background:${bg}">
       <span style="padding:0 5px;color:#6e7681;font-size:10px;font-family:ui-monospace,monospace">${pre}</span>
-      <input value="${tgVal}" ${dis} placeholder="Target" oninput="tmSet('${grpId}','${tgK}',this.value)"
+      <input id="tm-in-${grpId}-${tgK}" value="${tgVal}" ${dis} placeholder="Target" oninput="tmSet('${grpId}','${tgK}',this.value)"
         style="background:transparent;border:0;color:${derived ? '#8b949e' : '#e6edf3'};font-family:ui-monospace,monospace;font-size:12px;font-weight:600;padding:5px 6px 5px 0;width:100%;outline:none"></div>
   </div>`;
 }
@@ -132,20 +165,8 @@ function tmRender(grpId) {
   const ppTg = S.rs_tg ? (Math.abs(+S.rs_tg) / q).toFixed(1) : '';
 
   // Δ bridge — sirf hint. Δ na mile to '—', panel phir bhi poora kaam karta hai.
-  let bridge = `<span style="color:#6e7681">Δ aa raha hai… (iske bina bhi trigger set ho jayenge)</span>`;
-  if (S.rpt) {
-    const es = S.entry_spot || S.spot;
-    const mk = (rs, dirUp) => {
-      if (!rs || !es) return '—';
-      const pt = Math.abs(+rs) / S.rpt;
-      const lv = dirUp ? es + pt : es - pt;
-      return `${pt.toFixed(0)} pt → ${Math.round(lv).toLocaleString('en-IN')}`;
-    };
-    bridge = `<b style="color:#79b8ff">₹${Math.round(S.rpt).toLocaleString('en-IN')}</b>
-      <span style="color:#6e7681">per index point</span>
-      &nbsp;·&nbsp; 🎯 <span style="color:#3fb950">${mk(S.rs_tg, true)}</span>
-      &nbsp;·&nbsp; 🛡 <span style="color:#f85149">${mk(S.rs_sl, false)}</span>`;
-  }
+  // (HTML _tmBridgeHtml me — tmSet ise bina re-render in-place refresh karta hai.)
+  const bridge = _tmBridgeHtml(S);
 
   const seg = (v, cur, k) => `<button onclick="tmSet('${grpId}','${k}','${v}')"
     style="background:${cur === v ? '#1f6feb' : 'transparent'};border:0;color:${cur === v ? '#fff' : '#8b949e'};font-family:ui-monospace,monospace;font-size:11px;font-weight:600;padding:4px 8px;cursor:pointer">${v}</button>`;
@@ -168,12 +189,12 @@ function tmRender(grpId) {
 
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,430px));justify-content:start">
       ${_tmRow(grpId, 'rs', '₹ Combined premium', 'poore basket ka MTM', '₹', S.rs_sl, S.rs_tg, 'rs_sl', 'rs_tg', false, true)}
-      ${_tmRow(grpId, 'pp', 'Combined premium — points', '₹ ÷ qty (' + q + '), auto', 'pt', ppSl, ppTg, 'x', 'x', true, false)}
+      ${_tmRow(grpId, 'pp', 'Combined premium — points', '₹ ÷ qty (' + q + '), auto', 'pt', ppSl, ppTg, 'pp_sl', 'pp_tg', true, false)}
       ${_tmRow(grpId, 'ip', 'Index points', 'entry ke index level se ±', 'pt', S.ip_sl, S.ip_tg, 'ip_sl', 'ip_tg', false, true)}
       ${_tmRow(grpId, 'il', 'Index price', 'apna level — cross pe exit', '₹', S.il_sl, S.il_tg, 'il_sl', 'il_tg', false, false)}
     </div>
 
-    <div style="padding:8px 11px;border-bottom:1px solid #21262d;font-family:ui-monospace,monospace;font-size:11px">${bridge}</div>
+    <div id="tm-bridge-${grpId}" style="padding:8px 11px;border-bottom:1px solid #21262d;font-family:ui-monospace,monospace;font-size:11px">${bridge}</div>
 
     <div style="display:flex;gap:12px;flex-wrap:wrap;padding:10px 11px">
       <div style="min-width:200px;flex:1">

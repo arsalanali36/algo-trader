@@ -236,6 +236,10 @@ function render(){
 }
 function buildPanel(){
   const p=document.getElementById('panel');const avail=stratsForMode();
+  // Hidden-column count on the button itself — otherwise a strategy hidden weeks ago
+  // (or a "None" click) silently makes the whole journal look like "data missing".
+  const hiddenN=avail.filter(s=>!vis[s.id]).length;
+  const gb=document.getElementById('gbtn'); if(gb){ gb.textContent = hiddenN ? ('Columns · '+hiddenN+' hidden') : 'Columns'; gb.style.color = hiddenN ? '#d29922' : ''; }
   let h='<div class="ph"><b>Columns ('+avail.length+')</b><div><button class="mini" id="allBtn">All</button><button class="mini" id="noneBtn">None</button></div></div>';
   avail.forEach(s=>{const dot=s.modes.includes('live')?DOT_L:DOT_P;
     h+='<label><input type="checkbox" data-id="'+s.id+'" '+(vis[s.id]?'checked':'')+'><span>'+dot+'</span><span class="nm">'+s.idp+' '+esc(s.name)+'</span></label>';});
