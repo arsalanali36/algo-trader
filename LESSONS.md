@@ -5513,3 +5513,19 @@ Uske message pehle bhi aa rahe the aur ab bhi aayenge; ise unify karna alag kaam
 - Runtime subscribe = socket pe packet, reconnect nahi. Jis library ka `subscribe_symbols` `ws.closed` (websockets≥13 me nahi) use kare, uska packet khud bhejo.
 - Supervisor-COW forks **purana module** chalate hain agle re-warm tak — module-level behaviour badle to ownership/state pe **generation** rakho, warna naya code ek din late chalta hai aur pata bhi nahi chalta.
 - **Baaki khula:** asli spread (~7 pt/round-trip BNF monthly 4-leg) execution ki fees hai — feed fix ise nahi hataata; 02.10.01 ka ₹4,000 stop is basket ke shor + spread ke liye tang hi hai ([[project_code3b_basket_mtm_noise]]). Strategy forks kal 09:10 re-warm se naya smart_order lenge.
+
+
+## TRAP #205 — `exit_time_config()` tuple ko "HH:MM" samajh ke parse: 3 live loops ka expiry-squareoff + no-entry gate chup-chaap DEAD (2026-09-02, user-asked "02.17 aaj kyun nahi chali")
+
+**Symptom:** 02.17 Weekly Iron-Fly (REAL money) ne Wed 02-Sep 09:20 pe entry nahi li. Log me sirf "loop started" lines (kai restarts), na entry, na skip ka reason. State file me 26-Aug ki position `open` — jabki uske contracts **01-Sep ko expire** ho chuke the (broker pe cash-settled, journal me +953 round-trip).
+
+**Root:** `risk_gate.exit_time_config()` **(H, M) TUPLES** deta hai (docstring me likha hai). Teen live loops — `weekly_ironfly_live` (2 sites), `strangle_live` (2), `m_pattern_ironfly_live` (2) — ne `h, m = [int(x) for x in str(sqh).split(":")[:2]]` kiya: `str((15,10))` = `"(15, 10)"` → `int("(15, 10)")` **ValueError**, jo `except Exception: pass` (ya `return False`) me nigal gaya. Nateeja: **expiry-day squareoff kabhi fire nahi**, **no-entry-after gate hamesha False** (= gate hai hi nahi). Iron-fly: 01-Sep ko squareoff nahi → state `open` rahi → 02-Sep `has_open()` True → `_maybe_enter` **bina log** `continue` → entry MISS. Copy-paste family (ek loop me galat, teen me copy).
+
+**Fix:** `risk_gate.hm_tuple(v)` — tuple/list/"HH:MM" sab → (H,M); 6 sites isse. Weekly loop: `today > expiry_date` → position `expired` (broker-settled, koi order nahi) + log; `has_open` skip ab LOUD. `except: pass` → `except as e: _log(...)`. Guard `_DEV/tests/test_exit_time_hm.py`: helper + teen loops ke gates (patched cutoff → True/False) + **static regex** jo `str(<exit-time>).split(":")` pattern live code me wapas aane pe fail karta.
+
+**Sabak:**
+- `except Exception: pass` money-path gate ke andar = gate **optional** bana dena. Squareoff/no-entry jaisa check fail ho to LOUD log, chup nahi.
+- Ek helper ka return-type badle ya do shape possible ho → **normaliser helper** do (`hm_tuple`), har caller apni parsing na kare (Rule 6B; wahi shape TRAP #82/#132 — do jagah ek sach).
+- "Skip" bhi ek decision hai — bina log ke skip = agla din "kyun nahi chala" ka koi saboot nahi. Har `continue` jo entry rokta hai, ek line log kare.
+- Expiry-settled positions ko state me `open` rakhna cycle-based strategies (day-after-expiry entry) ko **poore hafte** ke liye block karta hai; past-expiry = auto-retire, orders nahi.
+- 02-Sep ka 09:20 entry miss ho gaya — 14:xx pe manual fire **nahi** kiya (Rule 10: backtest entry 09:20 hai). Agla cycle Wed 09-Sep.
