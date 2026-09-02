@@ -1426,54 +1426,6 @@
   }
  },
  {
-  "slug": "strangle_920",
-  "design": "strangle_roll_hedge",
-  "title": "02.15 - 9:20 Strangle Roll+Hedge (REAL-lake, IV-gated)",
-  "tf": "positional",
-  "params": {
-   "dist": 250,
-   "wing": 250,
-   "trig": 100,
-   "take_pct": 0.5,
-   "iv_gate_rank": 0.4
-  },
-  "exit": "50% credit / weekly expiry",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2021-07-01",
-   "2026-07-13"
-  ],
-  "days": 370,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 1.186,
-   "net_pct": 13.069,
-   "maxdd": -2.163,
-   "win_rate": 57.297,
-   "trades": 370,
-   "profit_factor": 1.664
-  },
-  "combos": {
-   "train": {
-    "sharpe": 0.849,
-    "net_pct": 5.472
-   },
-   "oos": {
-    "sharpe": 1.731,
-    "net_pct": 7.597
-   }
-  },
-  "p_value": 0.003,
-  "created": "2026-08-11 19:30",
-  "deploy_key": "strangle_920",
-  "deployed": "strangle_920",
-  "real_cost": {
-   "method": "REAL OptChainLake premium + date-aware Zerodha charges",
-   "note": "real premium (not BS) \u2014 seller, trustworthy per TRAP #136"
-  }
- },
- {
   "slug": "weekly_ironfly",
   "design": "weekly_ironfly",
   "title": "02.17 - Weekly Iron-Fly (day-after-expiry, REAL-lake, 5 lots)",
@@ -1988,6 +1940,54 @@
   "real_cost": {
    "method": "REAL OptChainLake premium + date-aware Zerodha charges + DOM slip, 1 lot",
    "note": "Replaces the Black-Scholes run (chain_zone_longatm, Sharpe 1.95) which overstated a BUYER's edge - BS understates the theta a buyer bleeds (TRAP #199). Same signal, same ORIGINAL params, same spot-based exits; only the option pricing is real. The lake starts 2021-07, so the 2018-2021 part of the original window is not covered. A 192-config param sweep was run and REJECTED: the train winner was Rs7,778 WORSE out-of-sample and train-vs-OOS correlation was only 0.234 (TRAP #200) - params are deliberately left at their original values."
+  }
+ },
+ {
+  "slug": "strangle_920",
+  "design": "strangle_roll_hedge",
+  "title": "02.15 - 9:20 Strangle Roll+Hedge (REAL-lake, IV-gated)",
+  "tf": "positional",
+  "params": {
+   "dist": 250,
+   "wing": 250,
+   "trig": 100,
+   "take_pct": 0.5,
+   "iv_gate_rank": 0.4
+  },
+  "exit": "50% credit / weekly expiry",
+  "instrument": "NIFTY 50",
+  "lot_size": 65,
+  "window": [
+   "2021-07-01",
+   "2026-07-13"
+  ],
+  "days": 370,
+  "significant": true,
+  "bs_full": {
+   "sharpe": 1.186,
+   "net_pct": 13.069,
+   "maxdd": -2.163,
+   "win_rate": 57.297,
+   "trades": 370,
+   "profit_factor": 1.664
+  },
+  "combos": {
+   "train": {
+    "sharpe": 0.849,
+    "net_pct": 5.472
+   },
+   "oos": {
+    "sharpe": 1.731,
+    "net_pct": 7.597
+   }
+  },
+  "p_value": 0.003,
+  "created": "2026-08-11 19:30",
+  "deploy_key": "strangle_920",
+  "deployed": "strangle_920",
+  "real_cost": {
+   "method": "REAL OptChainLake premium + date-aware Zerodha charges",
+   "note": "real premium (not BS) \u2014 seller, trustworthy per TRAP #136"
   }
  }
 ]

@@ -330,7 +330,8 @@
       "legs": 4,
       "instrument": "NIFTY",
       "hold": "Positional",
-      "structure": "Hedged short strangle + roll (IV-gated)"
+      "structure": "Hedged short strangle + roll (IV-gated)",
+      "note": "PARAMS 2026-09-02 (grid4, real lake): dist 300 / wing 200 / trig 100 / take 0.5 / IV>=40 — n436 Sharpe 1.88 worst -7,777 (was d250/w250 Sharpe 1.19). PAPER."
     },
     "02.16": {
       "name": "Strangle Roll+Hedge (manual)",

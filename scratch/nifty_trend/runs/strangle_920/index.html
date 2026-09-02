@@ -108,6 +108,7 @@
 </style>
 </head>
 <body>
+<div style="background:#161b22;border-bottom:1px solid #30363d;padding:8px 16px;font:13px -apple-system,Segoe UI,sans-serif;color:#8b949e">🔬 <b style="color:#e6edf3">Research journey</b> — kyun is nateeje pe pahunche: <a href="research_1_sweep.html" target="_blank" style="color:#58a6ff;margin:0 10px">① Naked 9-variant sweep</a> · <a href="research_2_hedge.html" target="_blank" style="color:#58a6ff">② Hedge + significance (final)</a></div>
 <div class="wrap">
   <div class="stickyhead">
     <div class="topbar">
@@ -229,6 +230,8 @@ function comboKey(){return (HAS_PASS&&R.combos[PASS+'|'+P])?PASS+'|'+P:P;}
 function C(){return R.combos[comboKey()]}
 const PASS_NOTE={
   instrument:'<b>① Instrument</b> — raw signal on <b>NIFTY spot</b>, spot-notional P&amp;L, house rules on (max 2/day, 3:15 exit). No daily ₹ caps, no options. <i>Question: is there an edge at all?</i>',
+  // meta.pass_note overrides the canned pass blurb — a run may keep the 'bs' pass KEY
+  // for schema compatibility while its P&L is not Black-Scholes at all (TRAP #199).
   rms:'<b>② + RMS</b> — same trades, plus the account <b>daily loss/profit caps</b> (spot-notional scale). <i>Does clamping bad/good days help or hurt the edge?</i>',
   bs:'<b>③ + Black-Scholes</b> — pass-② trades repriced into the <b>ATM CE/PE premium actually traded</b> (delta+theta, real Zerodha F&amp;O charges). This is the <b>deployable</b> P&amp;L. ₹ scale &amp; fees here are real; ①② are on the underlying and not directly comparable in ₹.'
 };

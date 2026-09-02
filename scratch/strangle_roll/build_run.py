@@ -195,7 +195,12 @@ combos = {"bs|full": combo(rows), "bs|train": combo(tr), "bs|oos": combo(oos),
 meta = dict(window=[rows[0]["date"], rows[-1]["date"]], days=len({r["date"] for r in rows}),
             start_cap=START_CAP, design="9:20 Strangle Roll+Hedge — REAL-lake, IV-gated (threatened t100)",
             tf="positional", candles=candles, passes=["bs"], periods=["full", "train", "oos"],
-            instrument="NIFTY 50", lot_size=LOT, lots=1)
+            instrument="NIFTY 50", lot_size=LOT, lots=1,
+            # Lab provenance badge (dashboard_intraday.html) reads window.RESULTS.meta,
+            # NOT meta.json — without this it showed "NOT PROVEN — pricing source not
+            # recorded" on a fully REAL-lake run (2026-09-02).
+            real_cost=dict(method="REAL OptChainLake premium + date-aware Zerodha charges",
+                           note="real premium (not BS) — seller, trustworthy per TRAP #136"))
 
 os.makedirs(os.path.join(RUNS, SLUG), exist_ok=True)
 with io.open(os.path.join(RUNS, SLUG, "results.js"), "w", encoding="utf-8") as f:

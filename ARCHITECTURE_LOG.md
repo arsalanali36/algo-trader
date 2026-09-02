@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-09-02 — 02.09 Auto-Rolling ATM Straddle: pehla REAL-lake backtest + SL-variant sweep
+**Status:** DONE (research-only, kuch deploy nahi)
+**Kya:** 02.09 (hedged rolling straddle, PAPER 29-Jul se, kabhi backtest nahi hua) ko NIFTY OptChainLake_1m (2021-07→2026-08, 1,254 din) pe LIVE `should_roll()`/`RollerState` import karke chalaya; 4 SL variants (none / breakeven-exit / defensive-roll / premium 1.5x-2x); slip collector bid/ask se naapi (ATM 0.10 pt, wing 0.05 pt per side).
+**Layer:** strategy / validation
+**Files:** `scratch/atm_straddle_roller/{backtest.py,report.py,inspect_day.py,results_full.json,results_smoke.json}`
+**Kyun:** user Q "iska backtest nahi kiya tha kya?" + "SL logical kya rahe". Rule 10: paper chal raha tha bina kisi number ke.
+**Depends on:** strangle_roll lake reader + charges.py + live `_ops/atm_straddle_roller.py`
+**Result:** gross −0.2 pt/din (edge NAHI, charges se pehle hi); net 3-lot −₹5.05L/5yr (measured slip) / −₹7.97L (0.25 slip); har saal negative; 5 saal me sirf **1 roll** (Rule 4 `cur_val` 4-leg sum vs 2-leg new = ~kabhi pass nahi); koi SL variant positive nahi (breakeven-exit worst-day −17k→−6k par net −3.9L); worst day 24-Nov-2022 expiry-day data-honest (0/1254 din structural cap ke bahar). Dekho memory `project_code3b_roller_backtest_verdict`.
+
 ## 2026-08-30 — 🧹 "78 open positions" ka asli matlab + 30 dead paper rows saaf (data-only, koi code change nahi)
 **Status:** DONE (VPS, WAL-safe backup `/root/ARSALAN/_backups/trades.db.bak.stalepaper_20260830_000000`)
 **Layer:** data (order_store rows) — koi order/risk/signal path nahi
@@ -1837,3 +1846,11 @@ Kuch deploy nahi kiya. Detail `scratch/btc_momentum/README.md`.
 **Layer:** ops / config
 **Kyun:** user request. ⚠️ Rule 10: Thu entry ≠ backtested Wed (day-after-expiry) entry — user ka explicit faisla, ek baar ke liye.
 **Depends on:** algo-monitor ironfly_loop running (yes)
+
+## 2026-09-02 — 02.15 strangle_920: distribution compressed (76% trades in −3.6k..+1.7k) → param grid search (research)
+**Status:** DONE — `scratch/strangle_roll/grid4.py` 162 configs real lake (19 min): compression STRUCTURAL (har config 74-85% trades ±₹2k), par plateau d300/w200/t100/IV≥40 tail+Sharpe sudhaarta (take0.5: n436, Sharpe 1.88, worst −7,777 vs deployed 1.19/−14,365). **User-approved → VPS `_auto_strangle` dist300/wing200/trig100/take0.5/iv0.40** (atomic+backup, cfg() hot-read, 0 open pos; PAPER). Lab badge fix: build_run.py results.js meta me `real_cost` (badge 'pricing source not recorded' galat tha). Memory [[project_code3b_strangle_grid4]].
+**Kya:** User: Lab distribution me 165/370 (asal 280) trades ek bucket me, "kuch optimise ho sakta?" — real-lake (OptChainLake_1m) pe sweep: sell dist / wing / trig / take_pct / IV-gate; train-OOS split, rank min(train,OOS) (TRAP #103), significance; sirf research report, live config untouched (Rule 10).
+**Layer:** research (scratch/strangle_roll)
+**Files:** `scratch/strangle_roll/engine2.py|engine3.py` (reuse), new `grid4.py`, report
+**Kyun:** user request; + Lab badge "pricing source not recorded" (meta me `pricing_source` missing — build_run fix)
+**Depends on:** local NIFTY lake (present)
