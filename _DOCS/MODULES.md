@@ -1236,6 +1236,7 @@ level_slots_live.py — watch loop + entry firing for _ops/level_slots.py.
 - 🔧 `fire_slot` — …
 - 🔧 `fno_symbols` — …
 - 🔧 `is_fno_underlying` — True if the scrip master lists options for this symbol (index or OPTSTK).
+- 🔧 `lake_history` — 1-min rows for the PAST `days` calendar days (today excluded — today comes live from
 - 🔧 `price_now` — The price the slot's LEVEL is measured in: premium for prem slots, spot otherwise.
 - 🔧 `spot_cached` — List-view price: cache-only (never a Dhan call) — None if nothing cached.
 - 🔧 `spot_now` — Underlying spot: BTC → delta; index → poller cache (+REST); stock → cache/REST.

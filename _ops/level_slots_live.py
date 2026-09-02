@@ -171,6 +171,62 @@ def _in_nse_session(t_ist_epoch):
     return 555 <= hm < 930
 
 
+# ─────────────────────────── on-disk 1-min lake (past days, zero Dhan) ───────────────────────────
+LAKE = os.path.join(ROOT, "_TRADING_DATA")
+
+
+def _lake_file(sym, date_str):
+    """Per-day 1-min CSV for an underlying: Index/NIFTY/NIFTY_<d>.csv (daily_extend) or
+    Equity/<SYM>/<SYM>_<d>.csv (algo-equity-daily collector, 210 F&O stocks). None if absent
+    (BANKNIFTY has no per-day store yet → Dhan fallback)."""
+    sym = str(sym).upper()
+    for sub in ("Index", "Equity"):
+        f = os.path.join(LAKE, sub, sym, f"{sym}_{date_str}.csv")
+        if os.path.exists(f):
+            return f
+    return None
+
+
+def _lake_rows(path):
+    """CSV 'Datetime,Open,High,Low,Close[,Volume]' (IST wall-clock) → [(t_ist_epoch,o,h,l,c)]."""
+    out = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            next(fh)
+            for line in fh:
+                parts = line.strip().split(",")
+                if len(parts) < 5:
+                    continue
+                d = datetime.strptime(parts[0][:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                out.append((int(d.timestamp()), float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])))
+    except Exception as e:
+        _log(f"lake read fail {path}: {e}")
+        return []
+    return out
+
+
+def lake_history(sym, days):
+    """1-min rows for the PAST `days` calendar days (today excluded — today comes live from
+    Dhan) + how many weekday files were missing. Purana data disk se, Dhan poll nahi."""
+    rows, missing = [], 0
+    today = _ist_now().date()
+    for k in range(1, int(days) + 1):
+        d = today - timedelta(days=k)
+        if d.weekday() >= 5:
+            continue
+        f = _lake_file(sym, d.isoformat())
+        if f:
+            rows.extend(_lake_rows(f))
+        else:
+            try:
+                if mc is not None and not mc.is_trading_day(d):
+                    continue                            # holiday, not a gap
+            except Exception:
+                pass
+            missing += 1
+    return rows, missing
+
+
 def fetch_bars(s, tf=None, force=False, days=1):
     """Closed candles for the slot's source at its TF (oldest→newest, IST-shifted
     epoch 'time' like /api/trade-chart-data). [] on any failure (freeze, never guess)."""
@@ -200,16 +256,29 @@ def fetch_bars(s, tf=None, force=False, days=1):
         else:
             from brokers import get_broker
             br = get_broker("dhan")
-            df = br.intraday_candles(src[1], src[2], src[3], days=days, interval=1)
-            if df is None or df.empty:
-                return []
             rows = []
-            for t, o, h, l, c in zip(df["time"], df["open"], df["high"], df["low"], df["close"]):
+            dhan_days = days
+            if days > 1 and s.get("kind") != "prem":
+                # past days from the on-disk lake; Dhan only for what the lake lacks
+                lrows, missing = lake_history(s.get("sym"), days)
+                if lrows:
+                    rows.extend(lrows)
+                    if missing == 0:
+                        dhan_days = 1                   # sirf aaj live se
+            df = br.intraday_candles(src[1], src[2], src[3], days=dhan_days, interval=1)
+            if (df is None or df.empty) and not rows:
+                return []
+            seen = {r[0] for r in rows}
+            if dhan_days > 1 and rows:
+                rows = []                               # lake had gaps → Dhan range is the truth
+                seen = set()
+            for t, o, h, l, c in (zip(df["time"], df["open"], df["high"], df["low"], df["close"]) if df is not None and not df.empty else []):
                 # df.time = naive IST Timestamp → treat as UTC to get IST-shifted epoch
                 te = int(t.replace(tzinfo=timezone.utc).timestamp())
-                if not _in_nse_session(te):
+                if not _in_nse_session(te) or te in seen:
                     continue           # Dhan appends a synthetic post-close bar (18:41, O=H=L=C)
                 rows.append((te, o, h, l, c))
+            rows.sort(key=lambda r: r[0])
             bars = _bucket_1m(rows, tf_min, int(now + 19800))
     except Exception as e:
         _log(f"bars fetch fail {s.get('id')}: {e}")
